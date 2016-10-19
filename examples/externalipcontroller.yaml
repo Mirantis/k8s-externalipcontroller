@@ -1,0 +1,23 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: externalipcontroller
+spec:
+  // only single replica allowed until we will add protection against fighting for
+  // same ip, this agent will probably become daemonset at that point
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: externalipcontroller
+    spec:
+      hostNetwork: true
+      containers:
+      - name: externalipcontroller
+        image: dshulyak/externalipcontroller
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+        env:
+        - name: HOST_INTERFACE
+          value: enp0s8
