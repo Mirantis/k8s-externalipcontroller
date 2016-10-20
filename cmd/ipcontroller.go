@@ -4,18 +4,35 @@ import (
 	"flag"
 	"os"
 
-	externalip "github.com/Mirantis/k8s-externalipcontroller/pkg"
 	"github.com/golang/glog"
+	"k8s.io/client-go/1.5/rest"
+	"k8s.io/client-go/1.5/tools/clientcmd"
+
+	externalip "github.com/Mirantis/k8s-externalipcontroller/pkg"
 )
 
 func main() {
-	var iface string
-	flag.StringVar(&iface, "iface", "eth0", "Link where ips will be assigned")
+	iface := flag.String("iface", "eth0", "Link where ips will be assigned")
+	kubeconfig := flag.String("kubeconfig", "", "kubeconfig to use with kubernetes client")
 	flag.Parse()
+
 	glog.V(4).Infof("Starting external ip controller")
 	stopCh := make(chan struct{})
 
-	if err := externalip.Run(iface, stopCh); err != nil {
+	var err error
+	var config *rest.Config
+	if *kubeconfig != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
+	} else {
+		glog.Infof("kubeconfig is empty, assuming we are running in kubernetes cluster")
+		config, err = rest.InClusterConfig()
+	}
+	if err != nil {
+		glog.Errorf("Error parsing config. %v", err)
+		os.Exit(1)
+	}
+
+	if err := externalip.Run(config, *iface, stopCh); err != nil {
 		glog.Errorf("Controller crashed with %v\n", err)
 		os.Exit(1)
 	}

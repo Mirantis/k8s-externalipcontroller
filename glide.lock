@@ -1,11 +1,6 @@
-hash: 1a9c6291670c45486d92cdee98082fc75da1e73b2a6bc20e216a184613f1a579
-updated: 2016-10-19T16:02:06.143004465+03:00
+hash: a7f31c08e35a3665a890b3a49f7206d9d04f0da7f6acd788afe1441d7f26c8bf
+updated: 2016-10-20T15:12:45.503604094+03:00
 imports:
-- name: cloud.google.com/go
-  version: 3b1ae45394a234c385be014e9a488f2bb6eef821
-  subpackages:
-  - compute/metadata
-  - internal
 - name: github.com/blang/semver
   version: 31b736133b98f26d5e078ec9eb591666edfd091f
 - name: github.com/coreos/go-oidc
@@ -59,6 +54,10 @@ imports:
   - proto
 - name: github.com/google/gofuzz
   version: bbcb9da2d746f8bdbd6a936686a0a6067ada0ec5
+- name: github.com/howeyc/gopass
+  version: 3ca23474a7c7203e0a0a070fd33508f6efdb9b3d
+- name: github.com/imdario/mergo
+  version: 6633656539c1639d9d78127b7d47c622b5d7b6dc
 - name: github.com/jonboulle/clockwork
   version: 72f9bd7c4e0c2a40055ab3d0f09654f730cce982
 - name: github.com/juju/ratelimit
@@ -69,6 +68,36 @@ imports:
   - buffer
   - jlexer
   - jwriter
+- name: github.com/onsi/ginkgo
+  version: 462326b1628e124b23f42e87a8f2750e3c4e2d24
+  subpackages:
+  - config
+  - internal/codelocation
+  - internal/containernode
+  - internal/failer
+  - internal/leafnodes
+  - internal/remote
+  - internal/spec
+  - internal/specrunner
+  - internal/suite
+  - internal/testingtproxy
+  - internal/writer
+  - reporters
+  - reporters/stenographer
+  - types
+- name: github.com/onsi/gomega
+  version: a78ae492d53aad5a7a232d0d0462c14c400e3ee7
+  subpackages:
+  - format
+  - internal/assertion
+  - internal/asyncassertion
+  - internal/testingtsupport
+  - matchers
+  - matchers/support/goraph/bipartitegraph
+  - matchers/support/goraph/edge
+  - matchers/support/goraph/node
+  - matchers/support/goraph/util
+  - types
 - name: github.com/pborman/uuid
   version: ca53cad383cad2479bbba7f7a1a05797ec1386e4
 - name: github.com/PuerkitoBio/purell
@@ -87,22 +116,28 @@ imports:
   - nl
 - name: github.com/vishvananda/netns
   version: 8ba1072b58e0c2a240eb5f6120165c7776c3e7b8
+- name: golang.org/x/crypto
+  version: 1f22c0103821b9390939b6776727195525381532
+  subpackages:
+  - ssh/terminal
 - name: golang.org/x/net
   version: 4876518f9e71663000c348837735820161a42df7
   subpackages:
   - context
-  - context/ctxhttp
   - http2
   - http2/hpack
   - idna
-  - lex/httplex
 - name: golang.org/x/oauth2
-  version: 3c3a985cb79f52a3190fbc056984415ca6763d01
+  version: 045497edb6234273d67dbc25da3f2ddbc4c4cacf
   subpackages:
   - google
   - internal
   - jws
   - jwt
+- name: golang.org/x/sys
+  version: 9c60d1c508f5134d1ca726b4641db998f2523357
+  subpackages:
+  - unix
 - name: golang.org/x/text
   version: 2910a502d2bf9e43193af9d68ca516529614eed3
   subpackages:
@@ -128,10 +163,17 @@ imports:
   - internal/remote_api
   - internal/urlfetch
   - urlfetch
+- name: google.golang.org/cloud
+  version: 975617b05ea8a58727e6c1a06b6161ff4185a9f2
+  subpackages:
+  - compute/metadata
+  - internal
+  - internal/opts
+  - storage
 - name: gopkg.in/inf.v0
   version: 3887ee99ecf07df5b447e9b00d9c0b2adaa9f3e4
 - name: gopkg.in/yaml.v2
-  version: 53feefa2559fb8dfa8d81baad31be332c97d6c77
+  version: bef53efd0c76e49e6de55ead051f886bea7e9420
 - name: k8s.io/client-go
   version: 6631b2769fbf8fd8ff6b2074d64774b010c7d37a
   subpackages:
@@ -213,6 +255,7 @@ imports:
   - 1.5/pkg/util/errors
   - 1.5/pkg/util/flowcontrol
   - 1.5/pkg/util/framer
+  - 1.5/pkg/util/homedir
   - 1.5/pkg/util/integer
   - 1.5/pkg/util/intstr
   - 1.5/pkg/util/json
@@ -234,8 +277,12 @@ imports:
   - 1.5/plugin/pkg/client/auth/gcp
   - 1.5/plugin/pkg/client/auth/oidc
   - 1.5/rest
+  - 1.5/tools/auth
   - 1.5/tools/cache
+  - 1.5/tools/clientcmd
   - 1.5/tools/clientcmd/api
+  - 1.5/tools/clientcmd/api/latest
+  - 1.5/tools/clientcmd/api/v1
   - 1.5/tools/metrics
   - 1.5/transport
 testImports: []

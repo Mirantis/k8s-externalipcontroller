@@ -21,4 +21,4 @@ WORKDIR /go/src/github.com/Mirantis/k8s-externalipcontroller
 
 RUN go build cmd/ipcontroller.go
 
-CMD ["ipcontroller", "--alsologtostderr=true", "-v=4", "-iface=echo ${HOST_INTERFACE}"]
+CMD ["./ipcontroller", "--alsologtostderr=true", "-v=4", "-iface=echo ${HOST_INTERFACE}"]
