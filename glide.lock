@@ -1,5 +1,5 @@
-hash: 1a9c6291670c45486d92cdee98082fc75da1e73b2a6bc20e216a184613f1a579
-updated: 2016-10-19T16:02:06.143004465+03:00
+hash: a7f31c08e35a3665a890b3a49f7206d9d04f0da7f6acd788afe1441d7f26c8bf
+updated: 2016-10-20T12:35:23.445573187+03:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -69,6 +69,10 @@ imports:
   - buffer
   - jlexer
   - jwriter
+- name: github.com/onsi/ginkgo
+  version: 462326b1628e124b23f42e87a8f2750e3c4e2d24
+- name: github.com/onsi/gomega
+  version: a78ae492d53aad5a7a232d0d0462c14c400e3ee7
 - name: github.com/pborman/uuid
   version: ca53cad383cad2479bbba7f7a1a05797ec1386e4
 - name: github.com/PuerkitoBio/purell
@@ -95,7 +99,6 @@ imports:
   - http2
   - http2/hpack
   - idna
-  - lex/httplex
 - name: golang.org/x/oauth2
   version: 3c3a985cb79f52a3190fbc056984415ca6763d01
   subpackages:
