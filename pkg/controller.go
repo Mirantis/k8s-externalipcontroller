@@ -15,11 +15,7 @@ import (
 	"k8s.io/client-go/1.5/tools/cache"
 )
 
-func Run(iface string, stopCh chan struct{}) error {
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return err
-	}
+func Run(config *rest.Config, iface string, stopCh chan struct{}) error {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err
