@@ -4,7 +4,7 @@ import (
 	"flag"
 	"os"
 
-	externalip "github.com/dshulyak/externalipcontroller/pkg"
+	externalip "github.com/Mirantis/k8s-externalipcontroller/pkg"
 	"github.com/golang/glog"
 )
 

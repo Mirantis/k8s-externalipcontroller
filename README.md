@@ -3,7 +3,7 @@ External ip controller
 
 Download
 ```
-github.com/dshulyak/externalipcontroller/
+github.com/Mirantis/k8s-externalipcontroller
 ```
 
 Install glide

@@ -14,10 +14,11 @@ spec:
       hostNetwork: true
       containers:
       - name: externalipcontroller
-        image: dshulyak/externalipcontroller
+        image: Mirantis/k8s-externalipcontroller
         imagePullPolicy: IfNotPresent
         securityContext:
           privileged: true
         env:
+        // TODO this is specific for my vagrant environment, configmap should be used here
         - name: HOST_INTERFACE
           value: enp0s8
