@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/1.5/tools/cache"
 )
 
-func Run(config *rest.Config, iface string, stopCh chan struct{}) error {
+func Run(config *rest.Config, iface string, mask string, stopCh chan struct{}) error {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err
@@ -34,10 +34,10 @@ func Run(config *rest.Config, iface string, stopCh chan struct{}) error {
 		0,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				processServiceExternalIPs(iface, obj.(*v1.Service))
+				processServiceExternalIPs(iface, mask, obj.(*v1.Service))
 			},
 			UpdateFunc: func(old, cur interface{}) {
-				processServiceExternalIPs(iface, cur.(*v1.Service))
+				processServiceExternalIPs(iface, mask, cur.(*v1.Service))
 			},
 			DeleteFunc: func(obj interface{}) {
 				// TODO implement deletion
@@ -48,22 +48,23 @@ func Run(config *rest.Config, iface string, stopCh chan struct{}) error {
 	return nil
 }
 
-func processServiceExternalIPs(iface string, service *v1.Service) {
+func processServiceExternalIPs(iface, mask string, service *v1.Service) {
 	for i := range service.Spec.ExternalIPs {
-		if err := ensureExternalIPAssigned(iface, service.Spec.ExternalIPs[i]); err != nil {
-			glog.Errorf("IP: %s. ERROR: %v", service.Spec.ExternalIPs[i], err)
+		cidr := service.Spec.ExternalIPs[i] + "/" + mask
+		if err := ensureExternalIPAssigned(iface, cidr); err != nil {
+			glog.Errorf("IP: %s. ERROR: %v", cidr, err)
 		} else {
-			glog.V(4).Infof("IP: %s was successfully assigned", service.Spec.ExternalIPs[i])
+			glog.V(4).Infof("IP: %s was successfully assigned", cidr)
 		}
 	}
 }
 
-func ensureExternalIPAssigned(iface string, ip string) error {
+func ensureExternalIPAssigned(iface, cidr string) error {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
 		return err
 	}
-	addr, err := netlink.ParseAddr(ip)
+	addr, err := netlink.ParseAddr(cidr)
 	if err != nil {
 		return err
 	}

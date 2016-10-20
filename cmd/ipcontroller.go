@@ -13,6 +13,7 @@ import (
 
 func main() {
 	iface := flag.String("iface", "eth0", "Link where ips will be assigned")
+	mask := flag.String("mask", "32", "mask part of the cidr")
 	kubeconfig := flag.String("kubeconfig", "", "kubeconfig to use with kubernetes client")
 	flag.Parse()
 
@@ -32,7 +33,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := externalip.Run(config, *iface, stopCh); err != nil {
+	if err := externalip.Run(config, *iface, *mask, stopCh); err != nil {
 		glog.Errorf("Controller crashed with %v\n", err)
 		os.Exit(1)
 	}
