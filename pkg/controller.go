@@ -8,6 +8,7 @@ import (
 
 	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api"
+	"k8s.io/client-go/1.5/pkg/api/v1"
 	"k8s.io/client-go/1.5/pkg/runtime"
 	"k8s.io/client-go/1.5/pkg/watch"
 	"k8s.io/client-go/1.5/rest"
@@ -33,14 +34,14 @@ func Run(iface string, stopCh chan struct{}) error {
 				return clientset.Core().Services(api.NamespaceAll).Watch(api.ListOptions{})
 			},
 		},
-		&api.Service{},
+		&v1.Service{},
 		0,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				processServiceExternalIPs(iface, obj.(*api.Service))
+				processServiceExternalIPs(iface, obj.(*v1.Service))
 			},
 			UpdateFunc: func(old, cur interface{}) {
-				processServiceExternalIPs(iface, cur.(*api.Service))
+				processServiceExternalIPs(iface, cur.(*v1.Service))
 			},
 			DeleteFunc: func(obj interface{}) {
 				// TODO implement deletion
@@ -51,7 +52,7 @@ func Run(iface string, stopCh chan struct{}) error {
 	return nil
 }
 
-func processServiceExternalIPs(iface string, service *api.Service) {
+func processServiceExternalIPs(iface string, service *v1.Service) {
 	for i := range service.Spec.ExternalIPs {
 		if err := ensureExternalIPAssigned(iface, service.Spec.ExternalIPs[i]); err != nil {
 			glog.Errorf("IP: %s. ERROR: %v", service.Spec.ExternalIPs[i], err)
