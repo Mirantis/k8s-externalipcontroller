@@ -51,7 +51,7 @@ func Run(config *rest.Config, iface string, mask string, stopCh chan struct{}) e
 func processServiceExternalIPs(iface, mask string, service *v1.Service) {
 	for i := range service.Spec.ExternalIPs {
 		cidr := service.Spec.ExternalIPs[i] + "/" + mask
-		if err := ensureExternalIPAssigned(iface, cidr); err != nil {
+		if err := EnsureIPAssigned(iface, cidr); err != nil {
 			glog.Errorf("IP: %s. ERROR: %v", cidr, err)
 		} else {
 			glog.V(4).Infof("IP: %s was successfully assigned", cidr)
@@ -59,7 +59,7 @@ func processServiceExternalIPs(iface, mask string, service *v1.Service) {
 	}
 }
 
-func ensureExternalIPAssigned(iface, cidr string) error {
+func EnsureIPAssigned(iface, cidr string) error {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
 		return err

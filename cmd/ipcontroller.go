@@ -17,7 +17,7 @@ func main() {
 	kubeconfig := flag.String("kubeconfig", "", "kubeconfig to use with kubernetes client")
 	flag.Parse()
 
-	glog.V(4).Infof("Starting external ip controller")
+	glog.V(4).Infof("Starting external ip controller using link: %s and mask: /%s", *iface, *mask)
 	stopCh := make(chan struct{})
 
 	var err error
