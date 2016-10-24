@@ -1,6 +1,6 @@
 FROM ubuntu:16.04
 MAINTAINER Dmitry Shulyak <yashulyak@gmail.com>
-LABEL Name="externalipcontroller" Version="0.1"
+LABEL Name="k8s-externalipcontroller" Version="0.1"
 
 RUN apt-get update \
 	&& apt-get install -y software-properties-common \
