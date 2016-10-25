@@ -18,6 +18,7 @@ var _ = Describe("Basic", func() {
 
 	It("Service should be reachable using assigned external ips", func() {
 		clientset, err := testutils.KubeClient()
+		Expect(err).NotTo(HaveOccurred())
 		namespaceObj := &v1.Namespace{
 			ObjectMeta: v1.ObjectMeta{
 				GenerateName: "e2e-tests-ipcontroller-",
@@ -25,22 +26,14 @@ var _ = Describe("Basic", func() {
 			},
 			Status: v1.NamespaceStatus{},
 		}
-		var ns *v1.Namespace
-		Eventually(func() error {
-			var err error
-			ns, err = clientset.Namespaces().Create(namespaceObj)
-			if err != nil {
-				return err
-			}
-			return nil
-		}, 5*time.Second, 1*time.Second).Should(BeNil())
-
+		ns, err := clientset.Namespaces().Create(namespaceObj)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("deploying externalipcontroller pod")
+		// TODO make docker0 iface configurable
 		externalipcontroller := newPod(
 			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
-			[]string{"sh", "-c", "./ipcontroller", "--alsologtostderr=true", "-v=4", "-iface=eth0", "-mask=24"}, nil, true, true)
+			[]string{"ipcontroller", "-logtostderr=true", "-v=4", "-iface=docker0", "-mask=24"}, nil, true, true)
 		pod, err := clientset.Pods(ns.Name).Create(externalipcontroller)
 		Expect(err).Should(BeNil())
 		testutils.WaitForReady(clientset, pod)
@@ -59,7 +52,7 @@ var _ = Describe("Basic", func() {
 		Expect(err).Should(BeNil())
 
 		By("assigning ip from external ip pool to a node where test is running")
-		Expect(externalip.EnsureIPAssigned("eth0", "10.108.10.4/24")).Should(BeNil())
+		Expect(externalip.EnsureIPAssigned(testutils.GetTestLink(), "10.108.10.4/24")).Should(BeNil())
 
 		By("veryfiying that service is reachable using external ip")
 		Eventually(func() error {
@@ -87,7 +80,7 @@ func newPod(podName, containerName, imageName string, cmd []string, labels map[s
 				{
 					Name:            containerName,
 					Image:           imageName,
-					Args:            cmd,
+					Command:         cmd,
 					SecurityContext: &v1.SecurityContext{Privileged: &privileged},
 					ImagePullPolicy: v1.PullIfNotPresent,
 				},

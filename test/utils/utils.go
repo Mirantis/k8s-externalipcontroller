@@ -13,15 +13,21 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var KUBECONFIG string
+var MASTER string
+var TESTLINK string
 
 func init() {
-	flag.StringVar(&KUBECONFIG, "kubeconfig", "/etc/kubeconfig", "kubeconfig to use with kubernetes client")
+	flag.StringVar(&MASTER, "master", "http://apiserver:8888", "apiserver address to use with restclient")
+	flag.StringVar(&TESTLINK, "testlink", "eth0", "link to use on the side of tests")
+}
+
+func GetTestLink() string {
+	return TESTLINK
 }
 
 func KubeClient() (*kubernetes.Clientset, error) {
-	glog.Infof("Using config %v\n", KUBECONFIG)
-	config, err := clientcmd.BuildConfigFromFlags("", KUBECONFIG)
+	glog.Infof("Using master %v\n", MASTER)
+	config, err := clientcmd.BuildConfigFromFlags(MASTER, "")
 	if err != nil {
 		return nil, err
 	}

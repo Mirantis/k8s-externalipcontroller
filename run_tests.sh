@@ -20,8 +20,11 @@ function import-image {
 	echo "Export docker image and import it on a dind node dind_node_1"
 	CONTAINERID="$(docker create ${IMAGE_REPO}:${IMAGE_TAG} bash)"
 	set -o xtrace
-	docker export "${CONTAINERID}" > ipcontroller.tar
-	docker cp ipcontroller.tar dind_node_1:/tmp
+	mkdir -p _output/
+	docker export "${CONTAINERID}" > _output/ipcontroller.tar
+	# TODO implement it as a provider (e.g source functions)
+	docker cp _output/ipcontroller.tar dind_node_1:/tmp
+	# docker exec -ti dind_node_1 docker rmi -f ${IMAGE_REPO}:${IMAGE_TAG}
 	docker exec -ti dind_node_1 docker import /tmp/ipcontroller.tar ${IMAGE_REPO}:${IMAGE_TAG}
 	set +o xtrace
 	echo "Finished copying docker image to dind_node_1"
@@ -30,8 +33,13 @@ function import-image {
 function run-tests {
 	echo "Running e2e tests"
 	set -o xtrace
-	docker run -v="/tmp/kubeconfig/kubeconfig.yaml:/etc/kubeconfig" --privileged=true \
-	-e "GOPATH=/go" -w="/go/src/github.com/Mirantis/k8s-externalipcontroller" -ti ${IMAGE_REPO}:${IMAGE_TAG} go test ./test/ --kubeconfig=/etc/kubeconfig
+	docker run \
+	--privileged=true \
+	--link dind_apiserver_1:apiserver \
+	-e "GOPATH=/go" \
+	-w="/go/src/github.com/Mirantis/k8s-externalipcontroller" \
+	-ti ${IMAGE_REPO}:${IMAGE_TAG} \
+	go test ./test/ --master=http://apiserver:8888 --testlink=eth0
 	set +o xtrace
 }
 
