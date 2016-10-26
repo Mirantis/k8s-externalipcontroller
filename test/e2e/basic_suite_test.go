@@ -1,4 +1,4 @@
-package externalip_test
+package e2e
 
 import (
 	"testing"

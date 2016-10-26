@@ -19,6 +19,6 @@ spec:
         securityContext:
           privileged: true
         env:
-        // TODO this is specific for my vagrant environment, configmap should be used here
+        # TODO this is specific for my vagrant environment, configmap should be used here
         - name: HOST_INTERFACE
-          value: enp0s8
+          value: eth0

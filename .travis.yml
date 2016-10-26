@@ -3,12 +3,15 @@ language: go
 services:
     - docker
 before_install:
+  - mkdir -p _output/
   - sudo apt-get install -y git
 install:
   - go get github.com/Masterminds/glide
   - glide install --strip-vendor
+  - go test -o _output/integration.test -c ./test/integration/
 before_script:
   - go test ./pkg/ -v
+  - sudo ./_output/integration.test
   - ./prepare.sh
   - ./run_tests.sh -bi
 script: ./run_tests.sh -r

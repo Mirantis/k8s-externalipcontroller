@@ -39,7 +39,7 @@ function run-tests {
 	-e "GOPATH=/go" \
 	-w="/go/src/github.com/Mirantis/k8s-externalipcontroller" \
 	-ti ${IMAGE_REPO}:${IMAGE_TAG} \
-	go test ./test/ --master=http://apiserver:8888 --testlink=eth0
+	go test ./test/e2e/ --master=http://apiserver:8888 --testlink=eth0
 	set +o xtrace
 }
 
