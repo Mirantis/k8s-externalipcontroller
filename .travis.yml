@@ -8,6 +8,7 @@ install:
   - go get github.com/Masterminds/glide
   - glide install --strip-vendor
 before_script:
+  - go test ./pkg/ -v
   - ./prepare.sh
   - ./run_tests.sh -bi
 script: ./run_tests.sh -r
