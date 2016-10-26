@@ -1,4 +1,4 @@
-package externalip_test
+package e2e
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"time"
 
 	externalip "github.com/Mirantis/k8s-externalipcontroller/pkg"
-	testutils "github.com/Mirantis/k8s-externalipcontroller/test/utils"
+	testutils "github.com/Mirantis/k8s-externalipcontroller/test/e2e/utils"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"

@@ -1,8 +1,6 @@
 package externalip
 
 import (
-	"reflect"
-
 	"github.com/golang/glog"
 	"github.com/vishvananda/netlink"
 
@@ -93,8 +91,7 @@ func EnsureIPAssigned(iface, cidr string) error {
 		return err
 	}
 	for i := range addrList {
-		// maybe just compare IP
-		if reflect.DeepEqual(&addrList[i], addr) {
+		if addrList[i].IPNet.String() == addr.IPNet.String() {
 			return nil
 		}
 	}
