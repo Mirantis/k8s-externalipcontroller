@@ -15,29 +15,50 @@ import (
 	"k8s.io/client-go/1.5/tools/cache"
 )
 
-func Run(config *rest.Config, iface string, mask string, stopCh chan struct{}) error {
+type ExternalIpController struct {
+	Iface string
+	Mask  string
+
+	source    cache.ListerWatcher
+	ipHandler func(iface, cidr string) error
+}
+
+func NewExternalIpController(config *rest.Config, iface, mask string) (*ExternalIpController, error) {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	_, controller := cache.NewInformer(
-		&cache.ListWatch{
-			ListFunc: func(options api.ListOptions) (runtime.Object, error) {
-				return clientset.Core().Services(api.NamespaceAll).List(api.ListOptions{})
-			},
-			WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
-				return clientset.Core().Services(api.NamespaceAll).Watch(api.ListOptions{})
-			},
+	lw := &cache.ListWatch{
+		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
+			return clientset.Core().Services(api.NamespaceAll).List(api.ListOptions{})
 		},
+		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			return clientset.Core().Services(api.NamespaceAll).Watch(api.ListOptions{})
+		},
+	}
+
+	return &ExternalIpController{
+		Iface:     iface,
+		Mask:      mask,
+		source:    lw,
+		ipHandler: EnsureIPAssigned,
+	}, nil
+}
+
+func (c *ExternalIpController) Run(stopCh chan struct{}) {
+
+	glog.Infof("Starting externalipcontroller")
+	_, controller := cache.NewInformer(
+		c.source,
 		&v1.Service{},
 		0,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				processServiceExternalIPs(iface, mask, obj.(*v1.Service))
+				c.processServiceExternalIPs(obj.(*v1.Service))
 			},
 			UpdateFunc: func(old, cur interface{}) {
-				processServiceExternalIPs(iface, mask, cur.(*v1.Service))
+				c.processServiceExternalIPs(cur.(*v1.Service))
 			},
 			DeleteFunc: func(obj interface{}) {
 				// TODO implement deletion
@@ -45,13 +66,12 @@ func Run(config *rest.Config, iface string, mask string, stopCh chan struct{}) e
 		},
 	)
 	controller.Run(stopCh)
-	return nil
 }
 
-func processServiceExternalIPs(iface, mask string, service *v1.Service) {
+func (c *ExternalIpController) processServiceExternalIPs(service *v1.Service) {
 	for i := range service.Spec.ExternalIPs {
-		cidr := service.Spec.ExternalIPs[i] + "/" + mask
-		if err := EnsureIPAssigned(iface, cidr); err != nil {
+		cidr := service.Spec.ExternalIPs[i] + "/" + c.Mask
+		if err := c.ipHandler(c.Iface, cidr); err != nil {
 			glog.Errorf("IP: %s. ERROR: %v", cidr, err)
 		} else {
 			glog.V(4).Infof("IP: %s was successfully assigned", cidr)

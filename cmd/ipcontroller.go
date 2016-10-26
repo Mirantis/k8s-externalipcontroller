@@ -33,8 +33,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := externalip.Run(config, *iface, *mask, stopCh); err != nil {
+	c, err := externalip.NewExternalIpController(config, *iface, *mask)
+	if err != nil {
 		glog.Errorf("Controller crashed with %v\n", err)
 		os.Exit(1)
 	}
+	c.Run(stopCh)
+	os.Exit(0)
 }
