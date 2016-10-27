@@ -12,16 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package integration
+package ipmanager
 
-import (
-	"testing"
-
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-)
-
-func TestNeworkFunctions(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Network")
+type Manager interface {
+	// Fit determintes if it is fair to acquire cidr to a node with uid
+	Fit(uid, cidr string) (bool, error)
 }
