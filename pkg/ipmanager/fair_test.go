@@ -43,7 +43,13 @@ func (k *testKeysApi) Get(ctx context.Context, key string, opts *client.GetOptio
 }
 
 func (k *testKeysApi) Set(ctx context.Context, key, value string, opts *client.SetOptions) (*client.Response, error) {
-	k.collection[key] = &client.Node{Value: value, Key: key}
+	var modifyIndex int
+	if _, ok := k.collection[key]; !ok {
+		modifyIndex = 0
+	} else {
+		modifyIndex = k.collection[key].ModifiedIndex + 1
+	}
+	k.collection[key] = &client.Node{Value: value, Key: key, ModifiedIndex: modifyIndex}
 	return &client.Response{Node: k.collection[key]}, nil
 }
 
@@ -75,7 +81,8 @@ func failIfErr(t *testing.T, err error) {
 
 func TestFairManager(t *testing.T) {
 	client := &testKeysApi{collection: map[string]*client.Node{}}
-	fair := &FairEtcd{client: client}
+	stop := make(chan struct{})
+	fair := &FairEtcd{client: client, stop: stop}
 	fit, err := fair.Fit("1", "10.10.0.2/24")
 	failIfErr(t, err)
 	if !fit {
@@ -101,4 +108,5 @@ func TestFairManager(t *testing.T) {
 	if !fit {
 		t.Errorf("Expected not to fit on Uid 1 %v", client.collection)
 	}
+	close(stop)
 }
