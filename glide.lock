@@ -1,8 +1,12 @@
-hash: a7f31c08e35a3665a890b3a49f7206d9d04f0da7f6acd788afe1441d7f26c8bf
-updated: 2016-10-20T15:12:45.503604094+03:00
+hash: 392542af415561eeb1620e19f36f29af45c9f85d06a4f1004e06bde0466a06dc
+updated: 2016-10-27T11:32:15.300702675+03:00
 imports:
 - name: github.com/blang/semver
   version: 31b736133b98f26d5e078ec9eb591666edfd091f
+- name: github.com/coreos/etcd
+  version: 83347907774bf36cbb261c594a32fd7b0f5dd9f6
+  subpackages:
+  - client
 - name: github.com/coreos/go-oidc
   version: 5644a2f50e2d2d5ba0b474bc5bc55fea1925936d
   subpackages:
@@ -279,6 +283,7 @@ imports:
   - 1.5/rest
   - 1.5/tools/auth
   - 1.5/tools/cache
+  - 1.5/tools/cache/testing
   - 1.5/tools/clientcmd
   - 1.5/tools/clientcmd/api
   - 1.5/tools/clientcmd/api/latest

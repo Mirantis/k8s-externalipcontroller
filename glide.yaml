@@ -14,3 +14,7 @@ import:
   version: v1.2.0
 - package: github.com/onsi/gomega
   version: v1.0
+- package: github.com/coreos/etcd
+  version: v3.1.0-rc.0
+  subpackages:
+  - client
