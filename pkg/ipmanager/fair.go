@@ -22,11 +22,16 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/coreos/etcd/client"
+	"github.com/golang/glog"
 )
 
 const (
-	etcdIPCollectionKey = "/ipcontroller/managedips/"
+	defaultEtcdIPCollectionKey = "/ipcontroller/managedips/"
+	defaultTTLDuration         = 10 * time.Second
+	defaultTTLRenewInterval    = 5 * time.Second
 )
+
+var defaultOpts FairEtcdOpts = FairEtcdOpts{defaultEtcdIPCollectionKey, defaultTTLDuration, defaultTTLRenewInterval}
 
 func NewFairEtcd(endpoints []string, stop chan struct{}) (*FairEtcd, error) {
 	cfg := client.Config{
@@ -40,45 +45,53 @@ func NewFairEtcd(endpoints []string, stop chan struct{}) (*FairEtcd, error) {
 		return nil, err
 	}
 	kapi := client.NewKeysAPI(c)
-	return &FairEtcd{client: kapi, stop: stop}, nil
+	return &FairEtcd{
+		client:         kapi,
+		stop:           stop,
+		ttlInitialized: map[string]bool{},
+		opts:           defaultOpts}, nil
+}
+
+type FairEtcdOpts struct {
+	etcdIPCollectionKey string
+	ttlDuration         time.Duration
+	ttlRenewInterval    time.Duration
 }
 
 type FairEtcd struct {
-	client client.KeysAPI
-	stop   chan struct{}
+	client         client.KeysAPI
+	stop           chan struct{}
+	ttlInitialized map[string]bool
+	opts           FairEtcdOpts
 }
 
 func (f *FairEtcd) Fit(uid, cidr string) (bool, error) {
 	// TODO use watch and cache values
-	resp, err := f.client.Get(context.Background(), etcdIPCollectionKey, &client.GetOptions{Quorum: true, Recursive: true})
+	resp, err := f.client.Get(context.Background(), f.opts.etcdIPCollectionKey, &client.GetOptions{Quorum: true, Recursive: true})
 	if err != nil {
 		return false, err
 	}
-	if !f.checkOwnership(uid, cidr, resp.Node.Nodes) {
-		return false, nil
+	for i := range resp.Node.Nodes {
+		if strings.Replace(cidr, "/", "::", -1) == resp.Node.Nodes[i].Key {
+			if resp.Node.Nodes[i].Value == uid {
+				f.initLeaseManager(cidr, resp.Node.Nodes[i])
+				return true, nil
+			}
+			return false, nil
+		}
 	}
 
 	if !f.checkFairness(uid, resp.Node.Nodes) {
 		return false, nil
 	}
 	// we need to replace "/" cause etcd will create one more directory because of it
-	key := fmt.Sprint(etcdIPCollectionKey, strings.Replace(cidr, "/", "::", -1))
-	resp, err = f.client.Set(context.Background(), key, uid, &client.SetOptions{TTL: time.Second * 10, PrevExist: client.PrevNoExist})
+	key := fmt.Sprint(f.opts.etcdIPCollectionKey, strings.Replace(cidr, "/", "::", -1))
+	resp, err = f.client.Set(context.Background(), key, uid, &client.SetOptions{TTL: f.opts.ttlDuration, PrevExist: client.PrevNoExist})
 	if err != nil {
 		return false, err
 	}
-	go f.ttlRenew(resp.Node)
+	f.initLeaseManager(cidr, resp.Node)
 	return resp.Node.Value == uid, nil
-}
-
-// checkOwnership verifies that given cidr is not used by someone else
-func (f *FairEtcd) checkOwnership(uid, cidr string, nodes client.Nodes) bool {
-	for _, node := range nodes {
-		if node.Key == cidr {
-			return uid == node.Value
-		}
-	}
-	return true
 }
 
 // checkFairness verifies that client with provided uid is underutilized
@@ -99,22 +112,33 @@ func (f *FairEtcd) checkFairness(uid string, nodes client.Nodes) bool {
 	return min
 }
 
-func (f *FairEtcd) ttlRenew(node *client.Node) {
-	index := node.ModifiedIndex
+func (f *FairEtcd) ttlRenew(cidr string, node *client.Node) {
 	for {
 		select {
-		case <-c.stop:
+		case <-f.stop:
+			delete(f.ttlInitialized, cidr)
 			return
-		case <-time.Tick(5 * time.Second).c:
-			resp, err := f.client.Set(
+		case <-time.Tick(f.opts.ttlRenewInterval):
+			_, err := f.client.Set(
 				context.Background(), node.Key, node.Value,
-				&client.SetOptions{TTL: time.Second * 10, PrevIndex: index})
+				&client.SetOptions{TTL: f.opts.ttlDuration, PrevValue: node.Value})
 			// TODO properly handle error + evict ip from a node
 			if err != nil {
-				glog.Errorf("was acquired by someone else")
-				return
+				if cerr, ok := err.(client.Error); ok && cerr.Code == client.ErrorCodeTestFailed {
+					glog.V(2).Infof("cidr %v acquired by another instace: %v", node.Key, err)
+					delete(f.ttlInitialized, cidr)
+					return
+				}
 			}
-			index = resp.Node.ModifiedIndex
 		}
+	}
+}
+
+func (f *FairEtcd) initLeaseManager(cidr string, node *client.Node) {
+	if f.ttlInitialized == nil {
+		return
+	}
+	if _, ok := f.ttlInitialized[cidr]; !ok {
+		go f.ttlRenew(cidr, node)
 	}
 }
