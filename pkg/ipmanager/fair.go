@@ -127,6 +127,7 @@ func (f *FairEtcd) ttlRenew(cidr string, node *client.Node) {
 				if cerr, ok := err.(client.Error); ok && cerr.Code == client.ErrorCodeTestFailed {
 					glog.V(2).Infof("cidr %v acquired by another instace: %v", node.Key, err)
 					delete(f.ttlInitialized, cidr)
+					// enqueue node.Key for deletion
 					return
 				}
 			}
@@ -141,4 +142,26 @@ func (f *FairEtcd) initLeaseManager(cidr string, node *client.Node) {
 	if _, ok := f.ttlInitialized[cidr]; !ok {
 		go f.ttlRenew(cidr, node)
 	}
+}
+
+func (f *FairEtcd) loopWatchExpired() {
+	watcher := f.client.Watcher(f.opts.etcdIPCollectionKey, &client.WatcherOptions{Recursive: true})
+	for {
+		if err := f.watchExpired(watcher); err != nil {
+			glog.Errorf("Watcher returner error %v", err)
+			continue
+		}
+	}
+}
+
+func (f *FairEtcd) watchExpired(watcher client.Watcher) error {
+	resp, err := watcher.Next()
+	if err != nil {
+		glog.Errorf("Watcher erred %v", err)
+		return err
+	}
+	if resp.Action != "expire" {
+		return nil
+	}
+	// enqueue resp.Node.Key for addition
 }
