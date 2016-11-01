@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 	"github.com/coreos/etcd/client"
 	"github.com/golang/glog"
 )
@@ -33,7 +34,7 @@ const (
 
 var defaultOpts FairEtcdOpts = FairEtcdOpts{defaultEtcdIPCollectionKey, defaultTTLDuration, defaultTTLRenewInterval}
 
-func NewFairEtcd(endpoints []string, stop chan struct{}) (*FairEtcd, error) {
+func NewFairEtcd(endpoints []string, stop chan struct{}, queue workqueue.QueueType) (*FairEtcd, error) {
 	cfg := client.Config{
 		Endpoints: endpoints,
 		Transport: client.DefaultTransport,
@@ -144,18 +145,23 @@ func (f *FairEtcd) initLeaseManager(cidr string, node *client.Node) {
 	}
 }
 
-func (f *FairEtcd) loopWatchExpired() {
+func (f *FairEtcd) loopWatchExpired(stop chan struct{}) {
 	watcher := f.client.Watcher(f.opts.etcdIPCollectionKey, &client.WatcherOptions{Recursive: true})
 	for {
-		if err := f.watchExpired(watcher); err != nil {
-			glog.Errorf("Watcher returner error %v", err)
-			continue
+		select {
+		case <-stop:
+			return
+		default:
+			if err := f.watchExpired(watcher); err != nil {
+				glog.Errorf("Watcher returned error %v", err)
+				continue
+			}
 		}
 	}
 }
 
 func (f *FairEtcd) watchExpired(watcher client.Watcher) error {
-	resp, err := watcher.Next()
+	resp, err := watcher.Next(context.Background())
 	if err != nil {
 		glog.Errorf("Watcher erred %v", err)
 		return err
@@ -164,4 +170,5 @@ func (f *FairEtcd) watchExpired(watcher client.Watcher) error {
 		return nil
 	}
 	// enqueue resp.Node.Key for addition
+	return nil
 }

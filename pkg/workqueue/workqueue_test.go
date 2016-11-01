@@ -24,11 +24,12 @@ func TestQueue(t *testing.T) {
 	queue.Add(1)
 	queue.Add(2)
 	queue.Remove(1)
-	item := queue.Get()
+	item, _ := queue.Get()
 	if citem := item.(int); citem != 2 {
 		t.Errorf("item expected to be 2 - %v", citem)
 	}
-	if queue.Get() != nil {
+	item, _ = queue.Get()
+	if item != nil {
 		t.Errorf("expected to return nil if empty")
 	}
 }

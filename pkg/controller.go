@@ -15,8 +15,9 @@
 package externalip
 
 import (
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 	"github.com/golang/glog"
-	"github.com/vishvananda/netlink"
 
 	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api"
@@ -32,7 +33,8 @@ type ExternalIpController struct {
 	Mask  string
 
 	source    cache.ListerWatcher
-	ipHandler func(iface, cidr string) error
+	ipHandler IPHandler
+	queue     workqueue.QueueType
 }
 
 func NewExternalIpController(config *rest.Config, iface, mask string) (*ExternalIpController, error) {
@@ -49,12 +51,12 @@ func NewExternalIpController(config *rest.Config, iface, mask string) (*External
 			return clientset.Core().Services(api.NamespaceAll).Watch(api.ListOptions{})
 		},
 	}
-
 	return &ExternalIpController{
 		Iface:     iface,
 		Mask:      mask,
 		source:    lw,
-		ipHandler: EnsureIPAssigned,
+		ipHandler: LinuxIPHandler{},
+		queue:     workqueue.NewQueue(),
 	}, nil
 }
 
@@ -77,37 +79,44 @@ func (c *ExternalIpController) Run(stopCh chan struct{}) {
 			},
 		},
 	)
-	controller.Run(stopCh)
+
+	// we can spawn worker for each interface, but i doubt that we will ever need such
+	// optimization
+	go c.worker()
+	go controller.Run(stopCh)
+	<-stopCh
+	c.queue.Close()
+}
+
+func (c *ExternalIpController) worker() {
+	for {
+		item, quit := c.queue.Get()
+		if quit {
+			return
+		}
+		var err error
+		var cidr string
+		switch t := item.(type) {
+		case *netutils.AddCIDR:
+			err = c.ipHandler.Add(c.Iface, t.Cidr)
+			cidr = t.Cidr
+		case *netutils.DelCIDR:
+			err = c.ipHandler.Del(c.Iface, t.Cidr)
+			cidr = t.Cidr
+		}
+		if err != nil {
+			glog.Errorf("Error assigning IP %v - %v", cidr, err)
+			c.queue.Add(item)
+		} else {
+			glog.V(2).Infof("IP %v was successfull assigned", cidr)
+		}
+		c.queue.Done(item)
+	}
 }
 
 func (c *ExternalIpController) processServiceExternalIPs(service *v1.Service) {
 	for i := range service.Spec.ExternalIPs {
 		cidr := service.Spec.ExternalIPs[i] + "/" + c.Mask
-		if err := c.ipHandler(c.Iface, cidr); err != nil {
-			glog.Errorf("IP: %s. ERROR: %v", cidr, err)
-		} else {
-			glog.V(4).Infof("IP: %s was successfully assigned", cidr)
-		}
+		c.queue.Add(&netutils.AddCIDR{cidr})
 	}
-}
-
-func EnsureIPAssigned(iface, cidr string) error {
-	link, err := netlink.LinkByName(iface)
-	if err != nil {
-		return err
-	}
-	addr, err := netlink.ParseAddr(cidr)
-	if err != nil {
-		return err
-	}
-	addrList, err := netlink.AddrList(link, netlink.FAMILY_ALL)
-	if err != nil {
-		return err
-	}
-	for i := range addrList {
-		if addrList[i].IPNet.String() == addr.IPNet.String() {
-			return nil
-		}
-	}
-	return netlink.AddrAdd(link, addr)
 }

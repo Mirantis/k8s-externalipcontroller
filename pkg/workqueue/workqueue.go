@@ -20,9 +20,10 @@ import (
 
 type QueueType interface {
 	Add(interface{})
-	Get() interface{}
+	Get() (interface{}, bool)
 	Done(interface{})
 	Remove(interface{})
+	Close()
 }
 
 func NewQueue() *Queue {
@@ -38,13 +39,16 @@ type Queue struct {
 	cond       sync.Locker
 	added      map[interface{}]bool
 	processing map[interface{}]bool
+	closed     bool
 	queue      []interface{}
 }
 
 func (n *Queue) Add(item interface{}) {
 	n.cond.Lock()
 	defer n.cond.Unlock()
-
+	if n.closed {
+		return
+	}
 	if _, exists := n.added[item]; exists {
 		return
 	}
@@ -55,25 +59,34 @@ func (n *Queue) Add(item interface{}) {
 	n.queue = append(n.queue, item)
 }
 
-func (n *Queue) Get() (item interface{}) {
+func (n *Queue) Close() {
+	n.cond.Lock()
+	defer n.cond.Unlock()
+	n.closed = true
+}
+
+func (n *Queue) Get() (item interface{}, quit bool) {
 	n.cond.Lock()
 	defer n.cond.Unlock()
 
 	if len(n.queue) == 0 {
-		return nil
+		return nil, n.closed
 	}
 
 	for {
 		item, n.queue = n.queue[0], n.queue[1:]
 		// item was removed and shouldnt be processed
 		if _, exists := n.added[item]; !exists {
+			if len(n.queue) == 0 {
+				return nil, n.closed
+			}
 			continue
 		}
 		break
 	}
 	n.processing[item] = true
 	delete(n.added, item)
-	return item
+	return item, false
 }
 
 func (n *Queue) Done(item interface{}) {
@@ -106,7 +119,7 @@ type ProcessingQueue struct {
 }
 
 func (p *ProcessingQueue) Process(f func(item interface{}) error) error {
-	item := p.Get()
+	item, _ := p.Get()
 	defer p.Done(item)
 	if err := f(item); err != nil {
 		p.Add(item)
