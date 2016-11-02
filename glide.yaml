@@ -18,3 +18,9 @@ import:
   version: v3.1.0-rc.0
   subpackages:
   - client
+- package: github.com/stretchr/testify
+  version: v1.1.4
+- package: github.com/pmezard/go-difflib
+  version: v1.0.0
+  subpackages:
+  - difflib

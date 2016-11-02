@@ -18,17 +18,22 @@ import (
 	"sync"
 )
 
-type QueueType interface {
+type QueueAddType interface {
 	Add(interface{})
+}
+
+type QueueType interface {
+	QueueAddType
 	Get() (interface{}, bool)
 	Done(interface{})
 	Remove(interface{})
 	Close()
+	Len() int
 }
 
 func NewQueue() *Queue {
 	return &Queue{
-		cond:       &sync.Mutex{},
+		cond:       sync.NewCond(&sync.Mutex{}),
 		added:      map[interface{}]bool{},
 		processing: map[interface{}]bool{},
 		queue:      []interface{}{},
@@ -36,7 +41,7 @@ func NewQueue() *Queue {
 }
 
 type Queue struct {
-	cond       sync.Locker
+	cond       *sync.Cond
 	added      map[interface{}]bool
 	processing map[interface{}]bool
 	closed     bool
@@ -44,8 +49,8 @@ type Queue struct {
 }
 
 func (n *Queue) Add(item interface{}) {
-	n.cond.Lock()
-	defer n.cond.Unlock()
+	n.cond.L.Lock()
+	defer n.cond.L.Unlock()
 	if n.closed {
 		return
 	}
@@ -57,17 +62,27 @@ func (n *Queue) Add(item interface{}) {
 		return
 	}
 	n.queue = append(n.queue, item)
+	n.cond.Signal()
+}
+
+func (n *Queue) Len() int {
+	return len(n.queue)
 }
 
 func (n *Queue) Close() {
-	n.cond.Lock()
-	defer n.cond.Unlock()
+	n.cond.L.Lock()
+	defer n.cond.L.Unlock()
 	n.closed = true
+	n.cond.Broadcast()
 }
 
 func (n *Queue) Get() (item interface{}, quit bool) {
-	n.cond.Lock()
-	defer n.cond.Unlock()
+	n.cond.L.Lock()
+	defer n.cond.L.Unlock()
+
+	if len(n.queue) == 0 && !n.closed {
+		n.cond.Wait()
+	}
 
 	if len(n.queue) == 0 {
 		return nil, n.closed
@@ -90,20 +105,21 @@ func (n *Queue) Get() (item interface{}, quit bool) {
 }
 
 func (n *Queue) Done(item interface{}) {
-	n.cond.Lock()
-	defer n.cond.Unlock()
+	n.cond.L.Lock()
+	defer n.cond.L.Unlock()
 
 	delete(n.processing, item)
 
 	if _, exists := n.added[item]; exists {
 		n.queue = append(n.queue, item)
+		n.cond.Signal()
 	}
 }
 
 // Remove will prevent item from being processed
 func (n *Queue) Remove(item interface{}) {
-	n.cond.Lock()
-	defer n.cond.Unlock()
+	n.cond.L.Lock()
+	defer n.cond.L.Unlock()
 
 	if _, exists := n.added[item]; exists {
 		delete(n.added, item)

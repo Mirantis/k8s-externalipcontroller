@@ -28,9 +28,13 @@ func TestQueue(t *testing.T) {
 	if citem := item.(int); citem != 2 {
 		t.Errorf("item expected to be 2 - %v", citem)
 	}
-	item, _ = queue.Get()
+	queue.Close()
+	item, closed := queue.Get()
 	if item != nil {
 		t.Errorf("expected to return nil if empty")
+	}
+	if !closed {
+		t.Errorf("queue expected to be closed")
 	}
 }
 

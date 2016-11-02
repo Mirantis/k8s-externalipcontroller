@@ -33,7 +33,7 @@ type ExternalIpController struct {
 	Mask  string
 
 	source    cache.ListerWatcher
-	ipHandler IPHandler
+	ipHandler netutils.IPHandler
 	queue     workqueue.QueueType
 }
 
@@ -55,13 +55,12 @@ func NewExternalIpController(config *rest.Config, iface, mask string) (*External
 		Iface:     iface,
 		Mask:      mask,
 		source:    lw,
-		ipHandler: LinuxIPHandler{},
+		ipHandler: netutils.LinuxIPHandler{},
 		queue:     workqueue.NewQueue(),
 	}, nil
 }
 
 func (c *ExternalIpController) Run(stopCh chan struct{}) {
-
 	glog.Infof("Starting externalipcontroller")
 	_, controller := cache.NewInformer(
 		c.source,

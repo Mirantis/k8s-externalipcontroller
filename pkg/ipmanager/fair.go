@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/net/context"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 	"github.com/coreos/etcd/client"
 	"github.com/golang/glog"
@@ -34,6 +35,9 @@ const (
 
 var defaultOpts FairEtcdOpts = FairEtcdOpts{defaultEtcdIPCollectionKey, defaultTTLDuration, defaultTTLRenewInterval}
 
+// NewFairEtcd will do 3 things:
+// 1. Validate that is it fair for certain node to acquire IP
+// 2. Watch expired IPs
 func NewFairEtcd(endpoints []string, stop chan struct{}, queue workqueue.QueueType) (*FairEtcd, error) {
 	cfg := client.Config{
 		Endpoints: endpoints,
@@ -46,11 +50,14 @@ func NewFairEtcd(endpoints []string, stop chan struct{}, queue workqueue.QueueTy
 		return nil, err
 	}
 	kapi := client.NewKeysAPI(c)
-	return &FairEtcd{
+	f := &FairEtcd{
 		client:         kapi,
 		stop:           stop,
 		ttlInitialized: map[string]bool{},
-		opts:           defaultOpts}, nil
+		opts:           defaultOpts,
+		queue:          queue}
+	go f.loopWatchExpired(stop)
+	return f, nil
 }
 
 type FairEtcdOpts struct {
@@ -64,6 +71,7 @@ type FairEtcd struct {
 	stop           chan struct{}
 	ttlInitialized map[string]bool
 	opts           FairEtcdOpts
+	queue          workqueue.QueueType
 }
 
 func (f *FairEtcd) Fit(uid, cidr string) (bool, error) {
@@ -123,12 +131,11 @@ func (f *FairEtcd) ttlRenew(cidr string, node *client.Node) {
 			_, err := f.client.Set(
 				context.Background(), node.Key, node.Value,
 				&client.SetOptions{TTL: f.opts.ttlDuration, PrevValue: node.Value})
-			// TODO properly handle error + evict ip from a node
 			if err != nil {
 				if cerr, ok := err.(client.Error); ok && cerr.Code == client.ErrorCodeTestFailed {
-					glog.V(2).Infof("cidr %v acquired by another instace: %v", node.Key, err)
+					glog.V(2).Infof("cidr %v acquired by another instance: %v", node.Key, err)
 					delete(f.ttlInitialized, cidr)
-					// enqueue node.Key for deletion
+					f.queue.Add(&netutils.DelCIDR{cidr})
 					return
 				}
 			}
@@ -169,6 +176,13 @@ func (f *FairEtcd) watchExpired(watcher client.Watcher) error {
 	if resp.Action != "expire" {
 		return nil
 	}
-	// enqueue resp.Node.Key for addition
+	f.queue.Add(&netutils.AddCIDR{cidrFromKey(resp.Node.Key)})
 	return nil
+}
+
+func cidrFromKey(key string) string {
+	// /collections/10.10.0.2::24
+	cidrParts := strings.Split(key, "/")
+	cidr := strings.Split(cidrParts[len(cidrParts)-1], "::")
+	return strings.Join(cidr, "/")
 }

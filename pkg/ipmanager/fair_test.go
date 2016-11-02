@@ -18,7 +18,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 	"github.com/coreos/etcd/client"
+	"github.com/stretchr/testify/mock"
 	"golang.org/x/net/context"
 )
 
@@ -31,16 +33,20 @@ type setAction struct {
 type testKeysApi struct {
 	collection       map[string]*client.Node
 	setActionTracker []setAction
+	watcher          client.Watcher
 }
 
-type testWatcher struct{}
-
-func NewTestKeysApi() *testKeysApi {
-	return &testKeysApi{map[string]*client.Node{}, []setAction{}}
+type testWatcher struct {
+	mock.Mock
 }
 
 func (w *testWatcher) Next(ctx context.Context) (*client.Response, error) {
-	return nil, nil
+	args := w.Called(ctx)
+	return args.Get(0).(*client.Response), args.Error(1)
+}
+
+func NewTestKeysApi() *testKeysApi {
+	return &testKeysApi{map[string]*client.Node{}, []setAction{}, &testWatcher{}}
 }
 
 func (k *testKeysApi) Get(ctx context.Context, key string, opts *client.GetOptions) (*client.Response, error) {
@@ -88,7 +94,7 @@ func (k *testKeysApi) Update(ctx context.Context, key, value string) (*client.Re
 }
 
 func (k *testKeysApi) Watcher(key string, opts *client.WatcherOptions) client.Watcher {
-	return &testWatcher{}
+	return k.watcher
 }
 
 func failIfErr(t *testing.T, err error) {
@@ -153,5 +159,37 @@ func TestTtlRenew(t *testing.T) {
 		if act.opts.TTL != opts.ttlDuration {
 			t.Errorf("ttl duration must be configured to one which is provided in opts %v, %v", opts.ttlDuration, act)
 		}
+	}
+}
+
+func TestExpireWatcher(t *testing.T) {
+	watcher := &testWatcher{}
+	kclient := NewTestKeysApi()
+	kclient.watcher = watcher
+	stop := make(chan struct{})
+	opts := FairEtcdOpts{ttlDuration: 1 * time.Second, ttlRenewInterval: 100 * time.Millisecond}
+
+	var times int
+
+	fair := &FairEtcd{
+		client:         kclient,
+		stop:           stop,
+		ttlInitialized: map[string]bool{},
+		opts:           opts,
+		queue:          workqueue.NewQueue()}
+	watcher.On("Next", context.Background()).Return(
+		&client.Response{Action: "expire", Node: &client.Node{Key: "/collection/10.10.0.2::24"}},
+		nil,
+	).Times(3).Run(func(_ mock.Arguments) {
+		times++
+		if times == 3 {
+			close(stop)
+		}
+	})
+
+	fair.loopWatchExpired(stop)
+
+	if fair.queue.Len() != 3 {
+		t.Errorf("Expected to see 3 items added to a queue, instead we see %d", fair.queue.Len())
 	}
 }
