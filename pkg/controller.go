@@ -60,6 +60,16 @@ func NewExternalIpController(config *rest.Config, iface, mask string) (*External
 	}, nil
 }
 
+func NewExternalIpControllerWithSource(iface, mask string, source cache.ListerWatcher) *ExternalIpController {
+	return &ExternalIpController{
+		Iface:     iface,
+		Mask:      mask,
+		source:    source,
+		ipHandler: netutils.LinuxIPHandler{},
+		queue:     workqueue.NewQueue(),
+	}
+}
+
 func (c *ExternalIpController) Run(stopCh chan struct{}) {
 	glog.Infof("Starting externalipcontroller")
 	_, controller := cache.NewInformer(
