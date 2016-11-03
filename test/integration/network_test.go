@@ -39,19 +39,19 @@ import (
 
 var _ = Describe("Network", func() {
 
-	var linkName string
+	var linkNames []string
 
 	BeforeEach(func() {
-		linkName = "test11"
-		ensureLinksRemoved(linkName)
+		linkNames = []string{"test11", "test12"}
+		ensureLinksRemoved(linkNames...)
 	})
 
 	AfterEach(func() {
-		ensureLinksRemoved(linkName)
+		ensureLinksRemoved(linkNames...)
 	})
 
 	It("Multiple ips can be assigned", func() {
-		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkName}}
+		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkNames[0]}}
 		By("adding dummy link with name " + link.Attrs().Name)
 		Expect(netlink.LinkAdd(link)).NotTo(HaveOccurred())
 		cidrToAssign := []string{"10.10.0.2/24", "10.10.0.2/24", "10.10.0.3/24"}
@@ -70,7 +70,7 @@ var _ = Describe("Network", func() {
 	})
 
 	It("Controller with noop manager will create provided externalIPs", func() {
-		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkName}}
+		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkNames[0]}}
 
 		By("adding link for controller")
 		Expect(netlink.LinkAdd(link)).NotTo(HaveOccurred())
@@ -114,18 +114,44 @@ var _ = Describe("Network", func() {
 	})
 
 	It("Controller with fair ipmanager will split ips between instances evenly", func() {
-		link1 := &netlink.Dummy{netlink.LinkAttrs{Name: "test1"}}
-		link2 := &netlink.Dummy{netlink.LinkAttrs{Name: "test2"}}
+		link1 := &netlink.Dummy{netlink.LinkAttrs{Name: linkNames[0]}}
+		link2 := &netlink.Dummy{netlink.LinkAttrs{Name: linkNames[1]}}
 		By("adding links for controllers")
 		Expect(netlink.LinkAdd(link1)).NotTo(HaveOccurred())
 		Expect(netlink.LinkAdd(link2)).NotTo(HaveOccurred())
 
 		By("starting 2 controllers with fair ipmanager")
-		stop := make(chan struct{})
-		defer close(stop)
+		stop1 := make(chan struct{})
+		defer close(stop1)
+		stop2 := make(chan struct{})
+		defer close(stop2)
 		source := fcache.NewFakeControllerSource()
-		createControllerWithFairManager(link1.Attrs().Name, stop, source)
-		createControllerWithFairManager(link2.Attrs().Name, stop, source)
+		createControllerWithFairManager(link1.Attrs().Name, stop1, source)
+		createControllerWithFairManager(link2.Attrs().Name, stop2, source)
+
+		source.Add(&v1.Service{
+			ObjectMeta: v1.ObjectMeta{Name: "service-simple"},
+			Spec:       v1.ServiceSpec{ExternalIPs: []string{"10.10.0.2", "10.10.0.3"}},
+		})
+
+		By("Validating that both ips were assigned")
+		Eventually(func() error {
+			var count int
+			addrList1, err := netlink.AddrList(link1, netlink.FAMILY_V4)
+			if err != nil {
+				return err
+			}
+			addrList2, err := netlink.AddrList(link2, netlink.FAMILY_V4)
+			if err != nil {
+				return err
+			}
+			count += len(addrList1)
+			count += len(addrList2)
+			if count != 2 {
+				return fmt.Errorf("Expected to see 2 ips assigned -- %v -- %v", addrList1, addrList2)
+			}
+			return nil
+		}, 10*time.Second, 1*time.Second).Should(BeNil())
 	})
 })
 

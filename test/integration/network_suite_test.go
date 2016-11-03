@@ -23,5 +23,6 @@ import (
 
 func TestNeworkFunctions(t *testing.T) {
 	RegisterFailHandler(Fail)
+	RunSpecs(t, "Etcd")
 	RunSpecs(t, "Network")
 }
