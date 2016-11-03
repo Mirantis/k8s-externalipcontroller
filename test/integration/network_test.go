@@ -26,7 +26,6 @@ import (
 	fcache "k8s.io/client-go/1.5/tools/cache/testing"
 
 	"github.com/vishvananda/netlink"
-	"github.com/vishvananda/netns"
 
 	"reflect"
 
@@ -36,26 +35,19 @@ import (
 
 var _ = Describe("Network", func() {
 
-	var targetNS netns.NsHandle
-	var originNS netns.NsHandle
+	var linkName string
 
 	BeforeEach(func() {
-		var err error
-		targetNS, err = netns.New()
-		Expect(err).NotTo(HaveOccurred())
-		netns.Set(targetNS)
-		originNS, err = netns.Get()
-		Expect(err).NotTo(HaveOccurred())
+		linkName = "test11"
+		ensureLinksRemoved(linkName)
 	})
 
 	AfterEach(func() {
-		netns.Set(originNS)
-		Expect(originNS.Close()).NotTo(HaveOccurred())
-		Expect(targetNS.Close()).NotTo(HaveOccurred())
+		ensureLinksRemoved(linkName)
 	})
 
 	It("Multiple ips can be assigned", func() {
-		link := &netlink.Dummy{netlink.LinkAttrs{Name: "test0"}}
+		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkName}}
 		By("adding dummy link with name " + link.Attrs().Name)
 		Expect(netlink.LinkAdd(link)).NotTo(HaveOccurred())
 		cidrToAssign := []string{"10.10.0.2/24", "10.10.0.2/24", "10.10.0.3/24"}
@@ -74,9 +66,10 @@ var _ = Describe("Network", func() {
 	})
 
 	It("Controller will create provided externalIPs", func() {
-		link := &netlink.Dummy{netlink.LinkAttrs{Name: "test0"}}
+		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkName}}
 		By("adding link for controller")
 		Expect(netlink.LinkAdd(link)).NotTo(HaveOccurred())
+		Expect(netlink.LinkSetUp(link)).NotTo(HaveOccurred())
 
 		By("creating and running controller with fake source")
 		stop := make(chan struct{})
@@ -103,7 +96,7 @@ var _ = Describe("Network", func() {
 		By("waiting until ips will be assigned")
 		Eventually(func() error {
 			resultIps := map[string]bool{}
-			addrList, err := netlink.AddrList(link, netlink.FAMILY_ALL)
+			addrList, err := netlink.AddrList(link, netlink.FAMILY_V4)
 			if err != nil {
 				return err
 			}
@@ -118,3 +111,13 @@ var _ = Describe("Network", func() {
 		// Add test for removal
 	})
 })
+
+func ensureLinksRemoved(links ...string) {
+	for _, l := range links {
+		link, err := netlink.LinkByName(l)
+		if err != nil {
+			continue
+		}
+		netlink.LinkDel(link)
+	}
+}

@@ -114,7 +114,7 @@ func (c *ExternalIpController) worker() {
 			cidr = t.Cidr
 		}
 		if err != nil {
-			glog.Errorf("Error assigning IP %v - %v", cidr, err)
+			glog.Errorf("Error assigning IP %s on %s - %v", cidr, c.Iface, err)
 			c.queue.Add(item)
 		} else {
 			glog.V(2).Infof("IP %v was successfull assigned", cidr)
