@@ -22,14 +22,17 @@ import (
 
 	controller "github.com/Mirantis/k8s-externalipcontroller/pkg"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 
 	"k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/tools/cache"
 	fcache "k8s.io/client-go/1.5/tools/cache/testing"
 
 	"github.com/vishvananda/netlink"
 
 	"reflect"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/ipmanager"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -66,8 +69,9 @@ var _ = Describe("Network", func() {
 		Expect(expectedIpSet).To(BeEquivalentTo(ipSet))
 	})
 
-	It("Controller will create provided externalIPs", func() {
+	It("Controller with noop manager will create provided externalIPs", func() {
 		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkName}}
+
 		By("adding link for controller")
 		Expect(netlink.LinkAdd(link)).NotTo(HaveOccurred())
 		Expect(netlink.LinkSetUp(link)).NotTo(HaveOccurred())
@@ -76,7 +80,7 @@ var _ = Describe("Network", func() {
 		stop := make(chan struct{})
 		defer close(stop)
 		source := fcache.NewFakeControllerSource()
-		c := controller.NewExternalIpControllerWithSource(link.Attrs().Name, "24", source)
+		c := controller.NewExternalIpControllerWithSource("1", link.Attrs().Name, "24", source, nil)
 		go c.Run(stop)
 
 		testIps := [][]string{
@@ -108,6 +112,21 @@ var _ = Describe("Network", func() {
 		delete(expectedIps, "10.10.0.4/24")
 		verifyAddrs(link, expectedIps)
 	})
+
+	It("Controller with fair ipmanager will split ips between instances evenly", func() {
+		link1 := &netlink.Dummy{netlink.LinkAttrs{Name: "test1"}}
+		link2 := &netlink.Dummy{netlink.LinkAttrs{Name: "test2"}}
+		By("adding links for controllers")
+		Expect(netlink.LinkAdd(link1)).NotTo(HaveOccurred())
+		Expect(netlink.LinkAdd(link2)).NotTo(HaveOccurred())
+
+		By("starting 2 controllers with fair ipmanager")
+		stop := make(chan struct{})
+		defer close(stop)
+		source := fcache.NewFakeControllerSource()
+		createControllerWithFairManager(link1.Attrs().Name, stop, source)
+		createControllerWithFairManager(link2.Attrs().Name, stop, source)
+	})
 })
 
 func verifyAddrs(link netlink.Link, expectedIps map[string]bool) {
@@ -135,4 +154,14 @@ func ensureLinksRemoved(links ...string) {
 		}
 		netlink.LinkDel(link)
 	}
+}
+
+func createControllerWithFairManager(iface string, stop chan struct{}, source cache.ListerWatcher) {
+	queue := workqueue.NewQueue()
+	fair, err := ipmanager.NewFairEtcd([]string{"http://localhost:4001"}, stop, queue)
+	Expect(err).NotTo(HaveOccurred())
+	c := controller.NewExternalIpControllerWithSource(iface, iface, "24", source, fair)
+	c.Queue = queue
+	go c.Run(stop)
+	return
 }
