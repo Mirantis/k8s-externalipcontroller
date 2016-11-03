@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"time"
 
-	externalip "github.com/Mirantis/k8s-externalipcontroller/pkg"
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	testutils "github.com/Mirantis/k8s-externalipcontroller/test/e2e/utils"
 
 	. "github.com/onsi/ginkgo"
@@ -66,7 +66,7 @@ var _ = Describe("Basic", func() {
 		Expect(err).Should(BeNil())
 
 		By("assigning ip from external ip pool to a node where test is running")
-		Expect(externalip.EnsureIPAssigned(testutils.GetTestLink(), "10.108.10.4/24")).Should(BeNil())
+		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.108.10.4/24")).Should(BeNil())
 
 		By("veryfiying that service is reachable using external ip")
 		Eventually(func() error {

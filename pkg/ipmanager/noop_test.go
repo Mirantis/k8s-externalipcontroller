@@ -12,16 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package integration
+package ipmanager
 
 import (
 	"testing"
-
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
 )
 
-func TestNeworkFunctions(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Network")
+func TestNoopPointerImplemenetManagerInterface(t *testing.T) {
+	testFunc := func(m Manager) {
+		fit, err := m.Fit("1", "10.10.0.2/24")
+		if err != nil {
+			t.Error(err)
+		}
+		if !fit {
+			t.Error("Fit expected to return true")
+		}
+	}
+	testFunc(&Noop{})
 }

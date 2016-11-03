@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package networktests
+package integration
 
 import (
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
+
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
-
-	externalip "github.com/Mirantis/k8s-externalipcontroller/pkg"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -49,7 +49,7 @@ var _ = Describe("Network", func() {
 		Expect(netlink.LinkAdd(link)).NotTo(HaveOccurred())
 		cidrToAssign := []string{"10.10.0.2/24", "10.10.0.2/24", "10.10.0.3/24"}
 		for _, cidr := range cidrToAssign {
-			err := externalip.EnsureIPAssigned(link.Attrs().Name, cidr)
+			err := netutils.EnsureIPAssigned(link.Attrs().Name, cidr)
 			Expect(err).NotTo(HaveOccurred())
 		}
 		addrList, err := netlink.AddrList(link, netlink.FAMILY_ALL)

@@ -12,16 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package integration
+package ipmanager
 
-import (
-	"testing"
+type Noop struct{}
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-)
-
-func TestNeworkFunctions(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Network")
+// Fit for noop always return true
+func (n *Noop) Fit(uid, cidr string) (bool, error) {
+	return true, nil
 }
