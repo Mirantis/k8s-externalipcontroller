@@ -15,12 +15,12 @@
 package netutils
 
 import (
-	"fmt"
+    "errors"
 
 	"github.com/vishvananda/netlink"
 )
 
-// EnsureIPAssigned will check if ip is alrady present on a given link
+// EnsureIPAssigned will check if ip is already present on a given link
 func EnsureIPAssigned(iface, cidr string) error {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
@@ -42,6 +42,28 @@ func EnsureIPAssigned(iface, cidr string) error {
 	return netlink.AddrAdd(link, addr)
 }
 
+// ensure that given IP is not present on a given link
+func EnsureIPUnassigned(iface, cidr string) error {
+	link, err := netlink.LinkByName(iface)
+	if err != nil {
+		return err
+	}
+	addr, err := netlink.ParseAddr(cidr)
+	if err != nil {
+		return err
+	}
+	addrList, err := netlink.AddrList(link, netlink.FAMILY_ALL)
+	if err != nil {
+		return err
+	}
+	for i := range addrList {
+		if addrList[i].IPNet.String() == addr.IPNet.String() {
+			return netlink.AddrDel(link, addr)
+		}
+	}
+	return errors.New("IP address was not assigned")
+}
+
 type IPHandler interface {
 	Add(iface, cidr string) error
 	Del(iface, cidr string) error
@@ -53,7 +75,7 @@ func (l LinuxIPHandler) Add(iface, cidr string) error {
 	return EnsureIPAssigned(iface, cidr)
 }
 func (l LinuxIPHandler) Del(iface, cidr string) error {
-	return fmt.Errorf("Not implemented")
+	return EnsureIPUnassigned(iface, cidr)
 }
 
 type AddCIDR struct {

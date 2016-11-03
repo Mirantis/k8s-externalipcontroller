@@ -72,7 +72,8 @@ func NewExternalIpControllerWithSource(iface, mask string, source cache.ListerWa
 
 func (c *ExternalIpController) Run(stopCh chan struct{}) {
 	glog.Infof("Starting externalipcontroller")
-	_, controller := cache.NewInformer(
+	var store cache.Store
+	store, controller := cache.NewInformer(
 		c.source,
 		&v1.Service{},
 		0,
@@ -84,7 +85,7 @@ func (c *ExternalIpController) Run(stopCh chan struct{}) {
 				c.processServiceExternalIPs(cur.(*v1.Service))
 			},
 			DeleteFunc: func(obj interface{}) {
-				// TODO implement deletion
+				c.deleteServiceExternalIPs(obj.(*v1.Service), store)
 			},
 		},
 	)
@@ -105,19 +106,22 @@ func (c *ExternalIpController) worker() {
 		}
 		var err error
 		var cidr string
+		var action string
 		switch t := item.(type) {
 		case *netutils.AddCIDR:
 			err = c.ipHandler.Add(c.Iface, t.Cidr)
 			cidr = t.Cidr
+			action = "Assignment"
 		case *netutils.DelCIDR:
 			err = c.ipHandler.Del(c.Iface, t.Cidr)
 			cidr = t.Cidr
+			action = "Cleanup"
 		}
 		if err != nil {
-			glog.Errorf("Error assigning IP %s on %s - %v", cidr, c.Iface, err)
+			glog.Errorf("%v of IP %v is failed: %v", action, cidr, err)
 			c.queue.Add(item)
 		} else {
-			glog.V(2).Infof("IP %v was successfull assigned", cidr)
+			glog.V(2).Infof("%v of IP %v is done successfully", action, cidr)
 		}
 		c.queue.Done(item)
 	}
@@ -127,5 +131,26 @@ func (c *ExternalIpController) processServiceExternalIPs(service *v1.Service) {
 	for i := range service.Spec.ExternalIPs {
 		cidr := service.Spec.ExternalIPs[i] + "/" + c.Mask
 		c.queue.Add(&netutils.AddCIDR{cidr})
+	}
+}
+
+func (c *ExternalIpController) deleteServiceExternalIPs(service *v1.Service, store cache.Store) {
+	if len(service.Spec.ExternalIPs) == 0 {
+		return
+	}
+	ips := make(map[string]bool)
+	// collect external IPs of existing services
+	for s := range store.List() {
+		if store.List()[s].(*v1.Service).ObjectMeta.UID != service.ObjectMeta.UID {
+			for i := range store.List()[s].(*v1.Service).Spec.ExternalIPs {
+				ips[store.List()[s].(*v1.Service).Spec.ExternalIPs[i]] = true
+			}
+		}
+	}
+	for _, ip := range service.Spec.ExternalIPs {
+	    if _, present := ips[ip]; !present {
+			cidr := ip + "/" + c.Mask
+			c.queue.Add(&netutils.DelCIDR{cidr})
+		}
 	}
 }
