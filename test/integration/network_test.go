@@ -15,10 +15,20 @@
 package integration
 
 import (
+	"fmt"
+	"strings"
+	"time"
+
+	controller "github.com/Mirantis/k8s-externalipcontroller/pkg"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
+
+	"k8s.io/client-go/1.5/pkg/api/v1"
+	fcache "k8s.io/client-go/1.5/tools/cache/testing"
 
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
+
+	"reflect"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -33,6 +43,7 @@ var _ = Describe("Network", func() {
 		var err error
 		targetNS, err = netns.New()
 		Expect(err).NotTo(HaveOccurred())
+		netns.Set(targetNS)
 		originNS, err = netns.Get()
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -60,5 +71,50 @@ var _ = Describe("Network", func() {
 			ipSet[addrList[i].IPNet.String()] = true
 		}
 		Expect(expectedIpSet).To(BeEquivalentTo(ipSet))
+	})
+
+	It("Controller will create provided externalIPs", func() {
+		link := &netlink.Dummy{netlink.LinkAttrs{Name: "test0"}}
+		By("adding link for controller")
+		Expect(netlink.LinkAdd(link)).NotTo(HaveOccurred())
+
+		By("creating and running controller with fake source")
+		stop := make(chan struct{})
+		defer close(stop)
+		source := fcache.NewFakeControllerSource()
+		c := controller.NewExternalIpControllerWithSource(link.Attrs().Name, "24", source)
+		go c.Run(stop)
+
+		testIps := [][]string{
+			{"10.10.0.2", "10.10.0.3"},
+			{"10.10.0.2", "10.10.0.3", "10.10.0.4"},
+			{"10.10.0.5"},
+		}
+		expectedIps := map[string]bool{}
+		for i, ips := range testIps {
+			for _, ip := range ips {
+				expectedIps[strings.Join([]string{ip, c.Mask}, "/")] = true
+			}
+			source.Add(&v1.Service{
+				ObjectMeta: v1.ObjectMeta{Name: "service-" + string(i)},
+				Spec:       v1.ServiceSpec{ExternalIPs: ips},
+			})
+		}
+		By("waiting until ips will be assigned")
+		Eventually(func() error {
+			resultIps := map[string]bool{}
+			addrList, err := netlink.AddrList(link, netlink.FAMILY_ALL)
+			if err != nil {
+				return err
+			}
+			for _, addr := range addrList {
+				resultIps[addr.IPNet.String()] = true
+			}
+			if !reflect.DeepEqual(expectedIps, resultIps) {
+				return fmt.Errorf("Assigned ips %v are not equal to expected %v.", resultIps, expectedIps)
+			}
+			return nil
+		}, 10*time.Second, 1*time.Second).Should(BeNil())
+		// Add test for removal
 	})
 })
