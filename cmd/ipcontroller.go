@@ -25,10 +25,18 @@ import (
 	externalip "github.com/Mirantis/k8s-externalipcontroller/pkg"
 )
 
+type FlagArray []string
+
+func (f *FlagArray) Set(v string) error {
+	*f = append(*f, v)
+	return nil
+}
+
 func main() {
 	iface := flag.String("iface", "eth0", "Link where ips will be assigned")
 	mask := flag.String("mask", "32", "mask part of the cidr")
 	kubeconfig := flag.String("kubeconfig", "", "kubeconfig to use with kubernetes client")
+	//ipmanagerType := flag.String("ipmanager", "noop", "choose noop or fair")
 	flag.Parse()
 
 	glog.V(4).Infof("Starting external ip controller using link: %s and mask: /%s", *iface, *mask)
@@ -47,7 +55,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	c, err := externalip.NewExternalIpController(config, *iface, *mask)
+	host, err := os.Hostname()
+	if err != nil {
+		glog.Errorf("Failed to get hostname: %v", err)
+		os.Exit(1)
+	}
+
+	c, err := externalip.NewExternalIpController(config, host, *iface, *mask, nil)
 	if err != nil {
 		glog.Errorf("Controller crashed with %v\n", err)
 		os.Exit(1)

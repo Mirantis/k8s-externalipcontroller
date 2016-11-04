@@ -15,6 +15,7 @@
 package externalip
 
 import (
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/ipmanager"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 	"github.com/golang/glog"
@@ -29,18 +30,24 @@ import (
 )
 
 type ExternalIpController struct {
+	Uid   string
 	Iface string
 	Mask  string
 
 	source    cache.ListerWatcher
 	ipHandler netutils.IPHandler
-	queue     workqueue.QueueType
+	Queue     workqueue.QueueType
+	manager   ipmanager.Manager
 }
 
-func NewExternalIpController(config *rest.Config, iface, mask string) (*ExternalIpController, error) {
+func NewExternalIpController(config *rest.Config, uid, iface, mask string, ipmanagerInst ipmanager.Manager) (*ExternalIpController, error) {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, err
+	}
+
+	if ipmanagerInst == nil {
+		ipmanagerInst = &ipmanager.Noop{}
 	}
 
 	lw := &cache.ListWatch{
@@ -52,21 +59,28 @@ func NewExternalIpController(config *rest.Config, iface, mask string) (*External
 		},
 	}
 	return &ExternalIpController{
+		Uid:       uid,
 		Iface:     iface,
 		Mask:      mask,
 		source:    lw,
 		ipHandler: netutils.LinuxIPHandler{},
-		queue:     workqueue.NewQueue(),
+		Queue:     workqueue.NewQueue(),
+		manager:   ipmanagerInst,
 	}, nil
 }
 
-func NewExternalIpControllerWithSource(iface, mask string, source cache.ListerWatcher) *ExternalIpController {
+func NewExternalIpControllerWithSource(uid, iface, mask string, source cache.ListerWatcher, ipmanagerInst ipmanager.Manager) *ExternalIpController {
+	if ipmanagerInst == nil {
+		ipmanagerInst = &ipmanager.Noop{}
+	}
 	return &ExternalIpController{
+		Uid:       uid,
 		Iface:     iface,
 		Mask:      mask,
 		source:    source,
 		ipHandler: netutils.LinuxIPHandler{},
-		queue:     workqueue.NewQueue(),
+		Queue:     workqueue.NewQueue(),
+		manager:   ipmanagerInst,
 	}
 }
 
@@ -95,42 +109,53 @@ func (c *ExternalIpController) Run(stopCh chan struct{}) {
 	go c.worker()
 	go controller.Run(stopCh)
 	<-stopCh
-	c.queue.Close()
+	c.Queue.Close()
 }
 
 func (c *ExternalIpController) worker() {
 	for {
-		item, quit := c.queue.Get()
+		item, quit := c.Queue.Get()
 		if quit {
 			return
 		}
-		var err error
-		var cidr string
-		var action string
-		switch t := item.(type) {
-		case *netutils.AddCIDR:
+		c.processItem(item)
+	}
+}
+
+func (c *ExternalIpController) processItem(item interface{}) {
+	defer c.Queue.Done(item)
+	var err error
+	var cidr string
+	var action string
+	switch t := item.(type) {
+	case *netutils.AddCIDR:
+		fit, err := c.manager.Fit(c.Uid, t.Cidr)
+		if !fit && err == nil {
+			return
+		}
+		if err == nil {
 			err = c.ipHandler.Add(c.Iface, t.Cidr)
 			cidr = t.Cidr
-			action = "Assignment"
-		case *netutils.DelCIDR:
-			err = c.ipHandler.Del(c.Iface, t.Cidr)
-			cidr = t.Cidr
-			action = "Cleanup"
 		}
-		if err != nil {
-			glog.Errorf("%v of IP %v is failed: %v", action, cidr, err)
-			c.queue.Add(item)
-		} else {
-			glog.V(2).Infof("%v of IP %v is done successfully", action, cidr)
-		}
-		c.queue.Done(item)
+		action = "assignment"
+
+	case *netutils.DelCIDR:
+		err = c.ipHandler.Del(c.Iface, t.Cidr)
+		cidr = t.Cidr
+		action = "removal"
+	}
+	if err != nil {
+		glog.Errorf("Error during IP: %s %v on %s - %v", cidr, action, c.Iface, err)
+		c.Queue.Add(item)
+	} else {
+		glog.V(2).Infof("IP: %v %v was successfull assigned", action, cidr)
 	}
 }
 
 func (c *ExternalIpController) processServiceExternalIPs(service *v1.Service) {
 	for i := range service.Spec.ExternalIPs {
 		cidr := service.Spec.ExternalIPs[i] + "/" + c.Mask
-		c.queue.Add(&netutils.AddCIDR{cidr})
+		c.Queue.Add(&netutils.AddCIDR{cidr})
 	}
 }
 
@@ -154,7 +179,7 @@ func (c *ExternalIpController) deleteServiceExternalIPs(service *v1.Service, sto
 	for _, ip := range service.Spec.ExternalIPs {
 		if _, present := ips[ip]; !present {
 			cidr := ip + "/" + c.Mask
-			c.queue.Add(&netutils.DelCIDR{cidr})
+			c.Queue.Add(&netutils.DelCIDR{cidr})
 		}
 	}
 }

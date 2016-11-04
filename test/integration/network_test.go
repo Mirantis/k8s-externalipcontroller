@@ -22,33 +22,40 @@ import (
 
 	controller "github.com/Mirantis/k8s-externalipcontroller/pkg"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 
 	"k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/tools/cache"
 	fcache "k8s.io/client-go/1.5/tools/cache/testing"
 
 	"github.com/vishvananda/netlink"
 
 	"reflect"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/ipmanager"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Network", func() {
+var _ = Describe("Network [sudo]", func() {
 
-	var linkName string
+	var linkNames []string
+	var manager *ipmanager.FairEtcd
 
 	BeforeEach(func() {
-		linkName = "test11"
-		ensureLinksRemoved(linkName)
+		linkNames = []string{"test11", "test12"}
+		ensureLinksRemoved(linkNames...)
 	})
 
 	AfterEach(func() {
-		ensureLinksRemoved(linkName)
+		ensureLinksRemoved(linkNames...)
+		if manager != nil {
+			manager.CleanIPCollection()
+		}
 	})
 
 	It("Multiple ips can be assigned", func() {
-		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkName}}
+		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkNames[0]}}
 		By("adding dummy link with name " + link.Attrs().Name)
 		Expect(netlink.LinkAdd(link)).NotTo(HaveOccurred())
 		cidrToAssign := []string{"10.10.0.2/24", "10.10.0.2/24", "10.10.0.3/24"}
@@ -66,8 +73,9 @@ var _ = Describe("Network", func() {
 		Expect(expectedIpSet).To(BeEquivalentTo(ipSet))
 	})
 
-	It("Controller will create provided externalIPs", func() {
-		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkName}}
+	It("Controller with noop manager will create provided externalIPs", func() {
+		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkNames[0]}}
+
 		By("adding link for controller")
 		Expect(netlink.LinkAdd(link)).NotTo(HaveOccurred())
 		Expect(netlink.LinkSetUp(link)).NotTo(HaveOccurred())
@@ -76,7 +84,7 @@ var _ = Describe("Network", func() {
 		stop := make(chan struct{})
 		defer close(stop)
 		source := fcache.NewFakeControllerSource()
-		c := controller.NewExternalIpControllerWithSource(link.Attrs().Name, "24", source)
+		c := controller.NewExternalIpControllerWithSource("1", link.Attrs().Name, "24", source, nil)
 		go c.Run(stop)
 
 		testIps := [][]string{
@@ -108,6 +116,90 @@ var _ = Describe("Network", func() {
 		delete(expectedIps, "10.10.0.4/24")
 		verifyAddrs(link, expectedIps)
 	})
+
+	It("Controller with fair ipmanager will split ips between instances evenly", func() {
+		link1 := &netlink.Dummy{netlink.LinkAttrs{Name: linkNames[0]}}
+		link2 := &netlink.Dummy{netlink.LinkAttrs{Name: linkNames[1]}}
+		By("adding links for controllers")
+		Expect(netlink.LinkAdd(link1)).NotTo(HaveOccurred())
+		Expect(netlink.LinkAdd(link2)).NotTo(HaveOccurred())
+
+		By("starting 2 controllers with fair ipmanager")
+		stop1 := make(chan struct{})
+		stop2 := make(chan struct{})
+		defer close(stop2)
+		source := fcache.NewFakeControllerSource()
+		manager = createControllerWithFairManager(link1.Attrs().Name, stop1, source)
+		createControllerWithFairManager(link2.Attrs().Name, stop2, source)
+
+		source.Add(&v1.Service{
+			ObjectMeta: v1.ObjectMeta{Name: "service-simple"},
+			Spec:       v1.ServiceSpec{ExternalIPs: []string{"10.10.0.2", "10.10.0.3"}},
+		})
+
+		By("Validating that both ips were assigned")
+		Eventually(func() error {
+			var count int
+			addrList1, err := netlink.AddrList(link1, netlink.FAMILY_V4)
+			if err != nil {
+				return err
+			}
+			addrList2, err := netlink.AddrList(link2, netlink.FAMILY_V4)
+			if err != nil {
+				return err
+			}
+			count += len(addrList1)
+			count += len(addrList2)
+			if count != 2 {
+				return fmt.Errorf("Expected to see 2 ips assigned -- %v -- %v", addrList1, addrList2)
+			}
+			return nil
+		}, 10*time.Second, 1*time.Second).Should(BeNil())
+
+		By("validating that when one controller is stopped, all ips will be acquired by second one")
+		close(stop1)
+		Eventually(func() error {
+			var count int
+			addrList2, err := netlink.AddrList(link2, netlink.FAMILY_V4)
+			if err != nil {
+				return err
+			}
+			count += len(addrList2)
+			if count != 2 {
+				return fmt.Errorf("Expected to see 2 ips assigned -- %v", addrList2)
+			}
+			return nil
+		}, 10*time.Second, 1*time.Second).Should(BeNil())
+		By("starting 1st controller and see that new ips will be able to land on managed link")
+		stop1 = make(chan struct{})
+		defer close(stop1)
+		createControllerWithFairManager(link1.Attrs().Name, stop1, source)
+		svc := &v1.Service{
+			ObjectMeta: v1.ObjectMeta{Name: "service-simple1"},
+			Spec:       v1.ServiceSpec{ExternalIPs: []string{"10.10.0.5", "10.10.0.7"}},
+		}
+		expectedIPs := map[string]bool{}
+		for _, ip := range svc.Spec.ExternalIPs {
+			expectedIPs[ip] = false
+		}
+		source.Add(svc)
+		Eventually(func() error {
+			addrList1, err := netlink.AddrList(link1, netlink.FAMILY_V4)
+			if err != nil {
+				return err
+			}
+			for _, addr := range addrList1 {
+				expectedIPs[addr.IP.String()] = true
+			}
+			for ip, state := range expectedIPs {
+				if !state {
+					return fmt.Errorf("IP %v is not found in addrlist %v", ip, addrList1)
+				}
+			}
+			return nil
+		}, 10*time.Second, 1*time.Second).Should(BeNil())
+
+	})
 })
 
 func verifyAddrs(link netlink.Link, expectedIps map[string]bool) {
@@ -135,4 +227,14 @@ func ensureLinksRemoved(links ...string) {
 		}
 		netlink.LinkDel(link)
 	}
+}
+
+func createControllerWithFairManager(iface string, stop chan struct{}, source cache.ListerWatcher) *ipmanager.FairEtcd {
+	queue := workqueue.NewQueue()
+	fair, err := ipmanager.NewFairEtcd([]string{"http://localhost:4001"}, stop, queue)
+	Expect(err).NotTo(HaveOccurred())
+	c := controller.NewExternalIpControllerWithSource(iface, iface, "24", source, fair)
+	c.Queue = queue
+	go c.Run(stop)
+	return fair
 }

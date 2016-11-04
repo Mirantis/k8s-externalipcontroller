@@ -15,7 +15,6 @@
 package ipmanager
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -29,20 +28,20 @@ import (
 
 const (
 	defaultEtcdIPCollectionKey = "/ipcontroller/managedips/"
-	defaultTTLDuration         = 10 * time.Second
-	defaultTTLRenewInterval    = 5 * time.Second
+	defaultTTLDuration         = 4 * time.Second
+	defaultTTLRenewInterval    = 2 * time.Second
 )
 
 var defaultOpts FairEtcdOpts = FairEtcdOpts{defaultEtcdIPCollectionKey, defaultTTLDuration, defaultTTLRenewInterval}
 
 // NewFairEtcd will do 3 things:
 // 1. Validate that is it fair for certain node to acquire IP
-// 2. Watch expired IPs
+// 2. Watch expired IPs and try to acquire them
+// 3. Renew ttl for acquired IPs, remove it from a node in case it was acquired by another node
 func NewFairEtcd(endpoints []string, stop chan struct{}, queue workqueue.QueueType) (*FairEtcd, error) {
 	cfg := client.Config{
-		Endpoints: endpoints,
-		Transport: client.DefaultTransport,
-		// set timeout per request to fail fast when the target endpoint is unavailable
+		Endpoints:               endpoints,
+		Transport:               client.DefaultTransport,
 		HeaderTimeoutPerRequest: time.Second,
 	}
 	c, err := client.New(cfg)
@@ -75,13 +74,21 @@ type FairEtcd struct {
 }
 
 func (f *FairEtcd) Fit(uid, cidr string) (bool, error) {
-	// TODO use watch and cache values
-	resp, err := f.client.Get(context.Background(), f.opts.etcdIPCollectionKey, &client.GetOptions{Quorum: true, Recursive: true})
+	glog.V(10).Infof("Trying to fit %s on %s", cidr, uid)
+
+	// REMOVE THIS ASAP
+	f.client.Set(context.Background(), keyFromCidr(f.opts.etcdIPCollectionKey, uid), uid, &client.SetOptions{
+		TTL: f.opts.ttlDuration,
+	})
+
+	resp, err := f.client.Get(context.Background(), f.opts.etcdIPCollectionKey, &client.GetOptions{
+		Quorum:    true,
+		Recursive: true})
 	if err != nil {
 		return false, err
 	}
 	for i := range resp.Node.Nodes {
-		if strings.Replace(cidr, "/", "::", -1) == resp.Node.Nodes[i].Key {
+		if cidr == cidrFromKey(resp.Node.Nodes[i].Key) {
 			if resp.Node.Nodes[i].Value == uid {
 				f.initLeaseManager(cidr, resp.Node.Nodes[i])
 				return true, nil
@@ -91,11 +98,15 @@ func (f *FairEtcd) Fit(uid, cidr string) (bool, error) {
 	}
 
 	if !f.checkFairness(uid, resp.Node.Nodes) {
+		glog.V(10).Infof("Not fair to acquire %s on %s", uid, cidr)
 		return false, nil
 	}
 	// we need to replace "/" cause etcd will create one more directory because of it
-	key := fmt.Sprint(f.opts.etcdIPCollectionKey, strings.Replace(cidr, "/", "::", -1))
-	resp, err = f.client.Set(context.Background(), key, uid, &client.SetOptions{TTL: f.opts.ttlDuration, PrevExist: client.PrevNoExist})
+	key := keyFromCidr(f.opts.etcdIPCollectionKey, cidr)
+	resp, err = f.client.Set(context.Background(), key, uid, &client.SetOptions{
+		TTL:       f.opts.ttlDuration,
+		PrevExist: client.PrevNoExist})
+	glog.V(10).Infof("Tried to acquire %s on %s. Response %v", cidr, uid, resp)
 	if err != nil {
 		return false, err
 	}
@@ -122,19 +133,22 @@ func (f *FairEtcd) checkFairness(uid string, nodes client.Nodes) bool {
 }
 
 func (f *FairEtcd) ttlRenew(cidr string, node *client.Node) {
+	glog.V(2).Infof("Starting ttl renew for cidr %s on node %v", cidr, node.Value)
+	defer delete(f.ttlInitialized, cidr)
 	for {
 		select {
 		case <-f.stop:
-			delete(f.ttlInitialized, cidr)
 			return
 		case <-time.Tick(f.opts.ttlRenewInterval):
 			_, err := f.client.Set(
 				context.Background(), node.Key, node.Value,
-				&client.SetOptions{TTL: f.opts.ttlDuration, PrevValue: node.Value})
+				&client.SetOptions{
+					TTL:       f.opts.ttlDuration,
+					PrevValue: node.Value})
+			glog.V(4).Infof("Renewing ttl for key %v value %v", node.Key, node.Value)
 			if err != nil {
 				if cerr, ok := err.(client.Error); ok && cerr.Code == client.ErrorCodeTestFailed {
 					glog.V(2).Infof("cidr %v acquired by another instance: %v", node.Key, err)
-					delete(f.ttlInitialized, cidr)
 					f.queue.Add(&netutils.DelCIDR{cidr})
 					return
 				}
@@ -157,6 +171,7 @@ func (f *FairEtcd) loopWatchExpired(stop chan struct{}) {
 	for {
 		select {
 		case <-stop:
+			glog.V(2).Infof("Exiting watcher loop")
 			return
 		default:
 			if err := f.watchExpired(watcher); err != nil {
@@ -176,8 +191,17 @@ func (f *FairEtcd) watchExpired(watcher client.Watcher) error {
 	if resp.Action != "expire" {
 		return nil
 	}
+	glog.V(2).Infof("Received expire response %v", resp)
 	f.queue.Add(&netutils.AddCIDR{cidrFromKey(resp.Node.Key)})
 	return nil
+}
+
+func (f *FairEtcd) CleanIPCollection() error {
+	_, err := f.client.Delete(context.Background(), f.opts.etcdIPCollectionKey, &client.DeleteOptions{
+		Dir:       true,
+		Recursive: true,
+	})
+	return err
 }
 
 func cidrFromKey(key string) string {
@@ -185,4 +209,8 @@ func cidrFromKey(key string) string {
 	cidrParts := strings.Split(key, "/")
 	cidr := strings.Split(cidrParts[len(cidrParts)-1], "::")
 	return strings.Join(cidr, "/")
+}
+
+func keyFromCidr(prefix, cidr string) string {
+	return strings.Join([]string{prefix, strings.Replace(cidr, "/", "::", -1)}, "")
 }
