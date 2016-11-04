@@ -139,16 +139,20 @@ func (c *ExternalIpController) deleteServiceExternalIPs(service *v1.Service, sto
 		return
 	}
 	ips := make(map[string]bool)
+	key, _ := cache.MetaNamespaceKeyFunc(service)
 	// collect external IPs of existing services
-	for s := range store.List() {
-		if store.List()[s].(*v1.Service).ObjectMeta.UID != service.ObjectMeta.UID {
-			for i := range store.List()[s].(*v1.Service).Spec.ExternalIPs {
-				ips[store.List()[s].(*v1.Service).Spec.ExternalIPs[i]] = true
+	svcList := store.List()
+	for s := range svcList {
+		svc := svcList[s].(*v1.Service)
+		svcKey, _ := cache.MetaNamespaceKeyFunc(svc)
+		if svcKey != key {
+			for _, ip := range svc.Spec.ExternalIPs {
+				ips[ip] = true
 			}
 		}
 	}
 	for _, ip := range service.Spec.ExternalIPs {
-	    if _, present := ips[ip]; !present {
+		if _, present := ips[ip]; !present {
 			cidr := ip + "/" + c.Mask
 			c.queue.Add(&netutils.DelCIDR{cidr})
 		}

@@ -16,6 +16,7 @@ package integration
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,34 +84,48 @@ var _ = Describe("Network", func() {
 			{"10.10.0.2", "10.10.0.3", "10.10.0.4"},
 			{"10.10.0.5"},
 		}
+		services := map[string]*v1.Service{}
 		expectedIps := map[string]bool{}
 		for i, ips := range testIps {
 			for _, ip := range ips {
 				expectedIps[strings.Join([]string{ip, c.Mask}, "/")] = true
 			}
-			source.Add(&v1.Service{
-				ObjectMeta: v1.ObjectMeta{Name: "service-" + string(i)},
+			svc := &v1.Service{
+				ObjectMeta: v1.ObjectMeta{Name: "service-" + strconv.Itoa(i)},
 				Spec:       v1.ServiceSpec{ExternalIPs: ips},
-			})
+			}
+			services[svc.Name] = svc
+			source.Add(svc)
 		}
 		By("waiting until ips will be assigned")
-		Eventually(func() error {
-			resultIps := map[string]bool{}
-			addrList, err := netlink.AddrList(link, netlink.FAMILY_V4)
-			if err != nil {
-				return err
-			}
-			for _, addr := range addrList {
-				resultIps[addr.IPNet.String()] = true
-			}
-			if !reflect.DeepEqual(expectedIps, resultIps) {
-				return fmt.Errorf("Assigned ips %v are not equal to expected %v.", resultIps, expectedIps)
-			}
-			return nil
-		}, 10*time.Second, 1*time.Second).Should(BeNil())
-		// Add test for removal
+		verifyAddrs(link, expectedIps)
+		By("removing service with single ip and waiting until this ip won't be on a link")
+		source.Delete(services["service-2"])
+		delete(expectedIps, "10.10.0.5/24")
+		verifyAddrs(link, expectedIps)
+		By("removing service with ips that are assigned to some other service and confirming that they are still on link")
+		source.Delete(services["service-1"])
+		delete(expectedIps, "10.10.0.4/24")
+		verifyAddrs(link, expectedIps)
 	})
 })
+
+func verifyAddrs(link netlink.Link, expectedIps map[string]bool) {
+	Eventually(func() error {
+		resultIps := map[string]bool{}
+		addrList, err := netlink.AddrList(link, netlink.FAMILY_V4)
+		if err != nil {
+			return err
+		}
+		for _, addr := range addrList {
+			resultIps[addr.IPNet.String()] = true
+		}
+		if !reflect.DeepEqual(expectedIps, resultIps) {
+			return fmt.Errorf("Assigned ips %v are not equal to expected %v.", resultIps, expectedIps)
+		}
+		return nil
+	}, 10*time.Second, 1*time.Second).Should(BeNil())
+}
 
 func ensureLinksRemoved(links ...string) {
 	for _, l := range links {

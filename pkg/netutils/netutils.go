@@ -14,11 +14,7 @@
 
 package netutils
 
-import (
-    "errors"
-
-	"github.com/vishvananda/netlink"
-)
+import "github.com/vishvananda/netlink"
 
 // EnsureIPAssigned will check if ip is already present on a given link
 func EnsureIPAssigned(iface, cidr string) error {
@@ -61,7 +57,7 @@ func EnsureIPUnassigned(iface, cidr string) error {
 			return netlink.AddrDel(link, addr)
 		}
 	}
-	return errors.New("IP address was not assigned")
+	return nil
 }
 
 type IPHandler interface {
