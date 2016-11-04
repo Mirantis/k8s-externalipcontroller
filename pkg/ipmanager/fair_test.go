@@ -145,11 +145,12 @@ func TestTtlRenew(t *testing.T) {
 	fair.Fit(uid, cidr)
 	time.Sleep(300 * time.Millisecond)
 	close(stop)
+	actions := kclient.setActionTracker[1:]
 
-	if len(kclient.setActionTracker) < 2 {
+	if len(actions) < 2 {
 		t.Errorf("Expected to see alteast 2 calls. 1 prevExist=false, all others prevValue=%v. %v", cidr, kclient.setActionTracker)
 	}
-	for i, act := range kclient.setActionTracker {
+	for i, act := range actions {
 		if i == 0 && act.opts.PrevExist != client.PrevNoExist {
 			t.Errorf("1st call should have PrevExist=true, %v", act)
 		}
@@ -191,5 +192,33 @@ func TestExpireWatcher(t *testing.T) {
 
 	if fair.queue.Len() != 3 {
 		t.Errorf("Expected to see 3 items added to a queue, instead we see %d", fair.queue.Len())
+	}
+}
+
+func TestCidrToKey(t *testing.T) {
+	testCases := []struct {
+		prefix string
+		cidr   string
+		key    string
+	}{
+		{
+			prefix: "/ips/",
+			cidr:   "10.10.0.2/24",
+			key:    "/ips/10.10.0.2::24",
+		},
+		{
+			prefix: "/ips/",
+			cidr:   "1",
+			key:    "/ips/1",
+		},
+	}
+
+	for _, test := range testCases {
+		if val := keyFromCidr(test.prefix, test.cidr); val != test.key {
+			t.Errorf("keyFromCidr returned incorrect result: %s != %s", val, test.key)
+		}
+		if val := cidrFromKey(test.key); val != test.cidr {
+			t.Errorf("cidrFromKey returned incorrect result: %s != %s", val, test.cidr)
+		}
 	}
 }

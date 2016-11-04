@@ -21,8 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestNeworkFunctions(t *testing.T) {
+func TestNetwork(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Etcd")
 	RunSpecs(t, "Network")
 }
