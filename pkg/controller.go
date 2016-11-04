@@ -179,7 +179,7 @@ func (c *ExternalIpController) deleteServiceExternalIPs(service *v1.Service, sto
 	for _, ip := range service.Spec.ExternalIPs {
 		if _, present := ips[ip]; !present {
 			cidr := ip + "/" + c.Mask
-			c.queue.Add(&netutils.DelCIDR{cidr})
+			c.Queue.Add(&netutils.DelCIDR{cidr})
 		}
 	}
 }

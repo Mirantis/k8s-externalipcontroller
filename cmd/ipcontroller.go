@@ -36,7 +36,7 @@ func main() {
 	iface := flag.String("iface", "eth0", "Link where ips will be assigned")
 	mask := flag.String("mask", "32", "mask part of the cidr")
 	kubeconfig := flag.String("kubeconfig", "", "kubeconfig to use with kubernetes client")
-	ipmanagerType := flag.String("ipmanager", "noop", "choose noop or fair")
+	//ipmanagerType := flag.String("ipmanager", "noop", "choose noop or fair")
 	flag.Parse()
 
 	glog.V(4).Infof("Starting external ip controller using link: %s and mask: /%s", *iface, *mask)
