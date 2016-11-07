@@ -24,15 +24,28 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api/v1"
 	"k8s.io/client-go/1.5/pkg/util/intstr"
 )
 
 var _ = Describe("Basic", func() {
+	var clientset *kubernetes.Clientset
+	var pods []*v1.Pod
+
+	BeforeEach(func() {
+		var err error
+		clientset, err = testutils.KubeClient()
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	AfterEach(func() {
+		if CurrentGinkgoTestDescription().Failed {
+			testutils.DumpLogs(clientset, pods...)
+		}
+	})
 
 	It("Service should be reachable using assigned external ips", func() {
-		clientset, err := testutils.KubeClient()
-		Expect(err).NotTo(HaveOccurred())
 		namespaceObj := &v1.Namespace{
 			ObjectMeta: v1.ObjectMeta{
 				GenerateName: "e2e-tests-ipcontroller-",
@@ -49,6 +62,7 @@ var _ = Describe("Basic", func() {
 			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
 			[]string{"ipcontroller", "-logtostderr=true", "-v=4", "-iface=docker0", "-mask=24"}, nil, true, true)
 		pod, err := clientset.Pods(ns.Name).Create(externalipcontroller)
+		pods = append(pods, pod)
 		Expect(err).Should(BeNil())
 		testutils.WaitForReady(clientset, pod)
 
@@ -57,6 +71,7 @@ var _ = Describe("Basic", func() {
 		nginx := newPod(
 			"nginx", "nginx", "gcr.io/google_containers/nginx-slim:0.7", nil, nginxLabels, false, false)
 		pod, err = clientset.Pods(ns.Name).Create(nginx)
+		pods = append(pods, pod)
 		Expect(err).Should(BeNil())
 		testutils.WaitForReady(clientset, pod)
 
