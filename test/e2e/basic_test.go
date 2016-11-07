@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/1.5/pkg/util/intstr"
 )
 
@@ -95,7 +96,26 @@ var _ = Describe("Basic", func() {
 			return nil
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 	})
+
+	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures", func() {
+
+	})
 })
+
+func newPrivilegedPodSpec(containerName, imageName, cmd string, hostNetwork, privileged bool) v1.PodSpec {
+	return v1.PodSpec{
+		HostNetwork: hostNetwork,
+		Containers: []v1.Container{
+			{
+				Name:            containerName,
+				Image:           imageName,
+				Command:         cmd,
+				SecurityContext: &v1.SecurityContext{Privileged: &privileged},
+				ImagePullPolicy: v1.PullIfNotPresent,
+			},
+		},
+	}
+}
 
 func newPod(podName, containerName, imageName string, cmd []string, labels map[string]string, hostNetwork bool, privileged bool) *v1.Pod {
 	return &v1.Pod{
@@ -103,19 +123,26 @@ func newPod(podName, containerName, imageName string, cmd []string, labels map[s
 			Name:   podName,
 			Labels: labels,
 		},
-		Spec: v1.PodSpec{
-			HostNetwork: hostNetwork,
-			Containers: []v1.Container{
-				{
-					Name:            containerName,
-					Image:           imageName,
-					Command:         cmd,
-					SecurityContext: &v1.SecurityContext{Privileged: &privileged},
-					ImagePullPolicy: v1.PullIfNotPresent,
+		Spec: newPrivilegedPodSpec(containerName, imageName, cmd, hostNetwork, privileged),
+	}
+}
+
+func newDaemonSet(dsName, containerName, imageName, cmd string, labels map[string]string, hostNetwork, privileged bool) *v1beta1.DaemonSet {
+	return &v1beta1.DaemonSet{
+		ObjectMeta: v1.ObjectMeta{
+			Name:   dsName,
+			Labels: labels,
+		},
+		Spec: v1beta1.DaemonSetSpec{
+			Template: v1.PodTemplateSpec{
+				ObjectMeta: v1.ObjectMeta{
+					Labels: labels,
 				},
+				Spec: newPrivilegedPodSpec(containerName, imageName, cmd, hostNetwork, privileged),
 			},
 		},
 	}
+
 }
 
 func newService(serviceName string, labels map[string]string, ports []v1.ServicePort, externalIPs []string) *v1.Service {
