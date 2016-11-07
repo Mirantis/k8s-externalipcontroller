@@ -17,6 +17,7 @@ package utils
 import (
 	"flag"
 	"fmt"
+	"io"
 	"time"
 
 	"k8s.io/client-go/1.5/kubernetes"
@@ -24,6 +25,8 @@ import (
 	"k8s.io/client-go/1.5/tools/clientcmd"
 
 	"github.com/golang/glog"
+
+	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
@@ -63,4 +66,20 @@ func WaitForReady(clientset *kubernetes.Clientset, pod *v1.Pod) {
 		}
 		return nil
 	}, 120*time.Second, 5*time.Second).Should(BeNil())
+}
+
+func DumpLogs(clientset *kubernetes.Clientset, pods ...*v1.Pod) {
+	for _, pod := range pods {
+		dumpLogs(clientset, pod)
+	}
+}
+
+func dumpLogs(clientset *kubernetes.Clientset, pod *v1.Pod) {
+	req := clientset.Core().Pods(pod.Namespace).GetLogs(pod.Name, &v1.PodLogOptions{})
+	readCloser, err := req.Stream()
+	Expect(err).NotTo(HaveOccurred())
+	defer readCloser.Close()
+	fmt.Fprintf(GinkgoWriter, "\n Dumping logs for %v:%v \n", pod.Namespace, pod.Name)
+	_, err = io.Copy(GinkgoWriter, readCloser)
+	Expect(err).NotTo(HaveOccurred())
 }
