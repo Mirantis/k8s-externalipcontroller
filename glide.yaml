@@ -24,3 +24,7 @@ import:
   version: v1.0.0
   subpackages:
   - difflib
+- package: k8s.io/kubernetes
+  version: v1.6.0-alpha.0
+  subpackages:
+  - pkg/client/unversioned/remotecommand

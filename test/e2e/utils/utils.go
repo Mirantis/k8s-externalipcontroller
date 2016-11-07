@@ -15,16 +15,22 @@
 package utils
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
+	"strings"
 	"time"
 
 	"k8s.io/client-go/1.5/kubernetes"
+	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/clientcmd"
-
-	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/client/unversioned/remotecommand"
+	remotecommandserver "k8s.io/kubernetes/pkg/kubelet/server/remotecommand"
+	"k8s.io/kubernetes/pkg/util/httpstream/spdy"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -42,16 +48,21 @@ func GetTestLink() string {
 	return TESTLINK
 }
 
-func KubeClient() (*kubernetes.Clientset, error) {
-	glog.Infof("Using master %v\n", MASTER)
+func Logf(format string, a ...interface{}) {
+	fmt.Fprintf(GinkgoWriter, format, a...)
+}
+
+func LoadConfig() *rest.Config {
 	config, err := clientcmd.BuildConfigFromFlags(MASTER, "")
-	if err != nil {
-		return nil, err
-	}
+	Expect(err).NotTo(HaveOccurred())
+	return config
+}
+
+func KubeClient() (*kubernetes.Clientset, error) {
+	Logf("Using master %v\n", MASTER)
+	config := LoadConfig()
 	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, err
-	}
+	Expect(err).NotTo(HaveOccurred())
 	return clientset, nil
 }
 
@@ -68,18 +79,62 @@ func WaitForReady(clientset *kubernetes.Clientset, pod *v1.Pod) {
 	}, 120*time.Second, 5*time.Second).Should(BeNil())
 }
 
-func DumpLogs(clientset *kubernetes.Clientset, pods ...*v1.Pod) {
+func DumpLogs(clientset *kubernetes.Clientset, pods ...v1.Pod) {
 	for _, pod := range pods {
 		dumpLogs(clientset, pod)
 	}
 }
 
-func dumpLogs(clientset *kubernetes.Clientset, pod *v1.Pod) {
+func dumpLogs(clientset *kubernetes.Clientset, pod v1.Pod) {
 	req := clientset.Core().Pods(pod.Namespace).GetLogs(pod.Name, &v1.PodLogOptions{})
 	readCloser, err := req.Stream()
 	Expect(err).NotTo(HaveOccurred())
 	defer readCloser.Close()
-	fmt.Fprintf(GinkgoWriter, "\n Dumping logs for %v:%v \n", pod.Namespace, pod.Name)
+	Logf("\n Dumping logs for %v:%v \n", pod.Namespace, pod.Name)
 	_, err = io.Copy(GinkgoWriter, readCloser)
 	Expect(err).NotTo(HaveOccurred())
+}
+
+func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) string {
+	container := pod.Spec.Containers[0].Name
+	var stdout, stderr bytes.Buffer
+	config := LoadConfig()
+	rest := clientset.CoreClient.GetRESTClient()
+	req := rest.Post().
+		Resource("pods").
+		Name(pod.Name).
+		Namespace(pod.Namespace).
+		SubResource("exec").
+		Param("container", container)
+	req.VersionedParams(&api.PodExecOptions{
+		Container: container,
+		Command:   cmd,
+		TTY:       false,
+		Stdin:     false,
+		Stdout:    true,
+		Stderr:    true,
+	}, api.ParameterCodec)
+	err := execute("POST", req.URL(), config, nil, &stdout, &stderr, false)
+	Expect(err).NotTo(HaveOccurred())
+	Logf("Exec error: %v\n", stderr.String())
+	return strings.TrimSpace(stdout.String())
+}
+
+func execute(method string, url *url.URL, config *rest.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool) error {
+	tlsConfig, err := rest.TLSConfigFor(config)
+	if err != nil {
+		return err
+	}
+	upgrader := spdy.NewRoundTripper(tlsConfig)
+	exec, err := remotecommand.NewStreamExecutor(upgrader, nil, method, url)
+	if err != nil {
+		return err
+	}
+	return exec.Stream(remotecommand.StreamOptions{
+		SupportedProtocols: remotecommandserver.SupportedStreamingProtocols,
+		Stdin:              stdin,
+		Stdout:             stdout,
+		Stderr:             stderr,
+		Tty:                tty,
+	})
 }

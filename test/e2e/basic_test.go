@@ -22,31 +22,30 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	testutils "github.com/Mirantis/k8s-externalipcontroller/test/e2e/utils"
 
+	"strings"
+
+	"net"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/1.5/kubernetes"
+	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/v1"
 	"k8s.io/client-go/1.5/pkg/apis/extensions/v1beta1"
+	"k8s.io/client-go/1.5/pkg/labels"
 	"k8s.io/client-go/1.5/pkg/util/intstr"
 )
 
 var _ = Describe("Basic", func() {
 	var clientset *kubernetes.Clientset
 	var pods []*v1.Pod
+	var daemonSets []*v1beta1.DaemonSet
+	var ns *v1.Namespace
 
 	BeforeEach(func() {
 		var err error
 		clientset, err = testutils.KubeClient()
 		Expect(err).NotTo(HaveOccurred())
-	})
-
-	AfterEach(func() {
-		if CurrentGinkgoTestDescription().Failed {
-			testutils.DumpLogs(clientset, pods...)
-		}
-	})
-
-	It("Service should be reachable using assigned external ips", func() {
 		namespaceObj := &v1.Namespace{
 			ObjectMeta: v1.ObjectMeta{
 				GenerateName: "e2e-tests-ipcontroller-",
@@ -54,55 +53,110 @@ var _ = Describe("Basic", func() {
 			},
 			Status: v1.NamespaceStatus{},
 		}
-		ns, err := clientset.Namespaces().Create(namespaceObj)
+		ns, err = clientset.Namespaces().Create(namespaceObj)
 		Expect(err).NotTo(HaveOccurred())
+	})
 
+	AfterEach(func() {
+		if CurrentGinkgoTestDescription().Failed {
+			podList, _ := clientset.Core().Pods(ns.Name).List(api.ListOptions{LabelSelector: labels.Everything()})
+			testutils.DumpLogs(clientset, podList.Items...)
+		}
+		for _, pod := range pods {
+			clientset.Core().Pods(pod.Namespace).Delete(pod.Name, &api.DeleteOptions{})
+		}
+		for _, ds := range daemonSets {
+			clientset.Extensions().DaemonSets(ds.Namespace).Delete(ds.Name, &api.DeleteOptions{})
+		}
+		clientset.Namespaces().Delete(ns.Name, &api.DeleteOptions{})
+	})
+
+	It("Service should be reachable using assigned external ips", func() {
 		By("deploying externalipcontroller pod")
 		// TODO make docker0 iface configurable
 		externalipcontroller := newPod(
 			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
-			[]string{"ipcontroller", "-logtostderr=true", "-v=4", "-iface=docker0", "-mask=24"}, nil, true, true)
+			[]string{"ipcontroller", "-logtostderr=true", "-v=10", "-iface=docker0", "-mask=24"}, nil, true, true)
 		pod, err := clientset.Pods(ns.Name).Create(externalipcontroller)
 		pods = append(pods, pod)
 		Expect(err).Should(BeNil())
 		testutils.WaitForReady(clientset, pod)
 
 		By("deploying nginx pod application and service with extnernal ips")
-		nginxLabels := map[string]string{"app": "nginx"}
-		nginx := newPod(
-			"nginx", "nginx", "gcr.io/google_containers/nginx-slim:0.7", nil, nginxLabels, false, false)
-		pod, err = clientset.Pods(ns.Name).Create(nginx)
-		pods = append(pods, pod)
-		Expect(err).Should(BeNil())
-		testutils.WaitForReady(clientset, pod)
-
-		servicePorts := []v1.ServicePort{{Protocol: v1.ProtocolTCP, Port: 2288, TargetPort: intstr.FromInt(80)}}
-		svc := newService("nginx-service", nginxLabels, servicePorts, []string{"10.108.10.3"})
-		svc, err = clientset.Services(ns.Name).Create(svc)
-		Expect(err).Should(BeNil())
+		externalIPs := []string{"10.108.10.3"}
+		nginxName := "nginx"
+		var nginxPort int32 = 2288
+		deployNginxPodAndService(nginxName, nginxPort, clientset, ns, externalIPs)
 
 		By("assigning ip from external ip pool to a node where test is running")
 		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.108.10.4/24")).Should(BeNil())
 
 		By("veryfiying that service is reachable using external ip")
-		Eventually(func() error {
-			resp, err := http.Get("http://10.108.10.3:2288/")
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode > 200 {
-				return fmt.Errorf("Unexpected error from nginx service: %s", resp.Status)
-			}
-			return nil
-		}, 30*time.Second, 1*time.Second).Should(BeNil())
+		verifyServiceReachable(nginxPort, externalIPs...)
 	})
 
 	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures", func() {
+		processName := "ipcontroller"
 
+		By("deploying etcd pod and service")
+		etcdName := "etcd"
+		var etcdPort int32 = 4001
+		deployEtcdPodAndService(etcdName, etcdPort, clientset, ns)
+		etcdFlag := fmt.Sprintf("-etcd=http://%s:%d", etcdName, etcdPort)
+
+		By("deploying externalipcontroller daemon set")
+		dsLabels := map[string]string{"app": "ipcontroller"}
+		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{processName, "-logtostderr=true", "-v=10",
+				"-iface=docker0", "-mask=24", "-ipmanager=fair", etcdFlag}, dsLabels, true, true)
+		ds, err := clientset.Extensions().DaemonSets(ns.Name).Create(ds)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("deploying nginx pod and service with multiple external ips")
+		nginxName := "nginx"
+		var nginxPort int32 = 2288
+		_, network, err := net.ParseCIDR("10.107.10.0/24")
+		Expect(err).NotTo(HaveOccurred())
+		externalIPs := []string{"10.107.10.3", "10.107.10.4", "10.107.10.5"}
+		deployNginxPodAndService(nginxName, nginxPort, clientset, ns, externalIPs)
+
+		By("assigning ip from external ip pool to a node where test is running")
+		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.107.10.10/24")).Should(BeNil())
+
+		By("verifying that ips are evenly distributed among all daemon set pods")
+		verifyServiceReachable(nginxPort, externalIPs...)
+		dsPods := getPodsByLabels(clientset, ns, dsLabels)
+		Expect(len(dsPods)).To(BeNumerically(">", 1))
+		var totalCount int
+		for i := range dsPods {
+			managedIPs := getManagedIps(clientset, dsPods[i], network)
+			Expect(len(managedIPs)).To(BeNumerically("<", len(externalIPs)))
+			totalCount += len(managedIPs)
+		}
+		Expect(totalCount).To(BeNumerically("=", len(externalIPs)))
+
+		By("making one of the controllers unreachable and verifying that all ips are rescheduled on the other pods")
+		rst := testutils.ExecInPod(clientset, dsPods[0], "pkill --echo -19 ", processName)
+		Expect(rst).NotTo(BeEmpty())
+
+		By("verify that all ips are reassigned to another pod")
+		allIPs := getManagedIps(clientset, dsPods[1], network)
+		Expect(len(allIPs)).To(BeNumerically("=", len(externalIPs)))
+
+		By("bring back controller and verify that ips are purged")
+		rst = testutils.ExecInPod(clientset, dsPods[0], "pkill --echo -18 ", processName)
+		Expect(rst).NotTo(BeEmpty())
+		Eventually(func() error {
+			if ips := getManagedIps(clientset, dsPods[0], network); ips == nil {
+				return nil
+			} else {
+				return fmt.Errorf("Unexpected IP %v", ips)
+			}
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
 	})
 })
 
-func newPrivilegedPodSpec(containerName, imageName, cmd string, hostNetwork, privileged bool) v1.PodSpec {
+func newPrivilegedPodSpec(containerName, imageName string, cmd []string, hostNetwork, privileged bool) v1.PodSpec {
 	return v1.PodSpec{
 		HostNetwork: hostNetwork,
 		Containers: []v1.Container{
@@ -127,7 +181,7 @@ func newPod(podName, containerName, imageName string, cmd []string, labels map[s
 	}
 }
 
-func newDaemonSet(dsName, containerName, imageName, cmd string, labels map[string]string, hostNetwork, privileged bool) *v1beta1.DaemonSet {
+func newDaemonSet(dsName, containerName, imageName string, cmd []string, labels map[string]string, hostNetwork, privileged bool) *v1beta1.DaemonSet {
 	return &v1beta1.DaemonSet{
 		ObjectMeta: v1.ObjectMeta{
 			Name:   dsName,
@@ -157,4 +211,67 @@ func newService(serviceName string, labels map[string]string, ports []v1.Service
 			ExternalIPs: externalIPs,
 		},
 	}
+}
+
+func deployEtcdPodAndService(serviceName string, servicePort int32, clientset *kubernetes.Clientset, ns *v1.Namespace) {
+	etcdLabels := map[string]string{"app": "etcd"}
+	pod := newPod("etcd", "etcd", "gcr.io/google_containers/etcd-amd64:3.0.4", nil, etcdLabels, false, false)
+	pod, err := clientset.Core().Pods(ns.Name).Create(pod)
+	Expect(err).NotTo(HaveOccurred())
+	testutils.WaitForReady(clientset, pod)
+	svcPorts := []v1.ServicePort{{Protocol: v1.ProtocolTCP, Port: servicePort, TargetPort: intstr.FromInt(4001)}}
+	svc := newService(serviceName, etcdLabels, svcPorts, nil)
+	_, err = clientset.Core().Services(ns.Name).Create(svc)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func deployNginxPodAndService(serviceName string, servicePort int32, clientset *kubernetes.Clientset, ns *v1.Namespace, externalIPs []string) {
+	nginxLabels := map[string]string{"app": "nginx"}
+	pod := newPod(
+		"nginx", "nginx", "gcr.io/google_containers/nginx-slim:0.7", nil, nginxLabels, false, false)
+	pod, err := clientset.Pods(ns.Name).Create(pod)
+	Expect(err).Should(BeNil())
+	testutils.WaitForReady(clientset, pod)
+
+	servicePorts := []v1.ServicePort{{Protocol: v1.ProtocolTCP, Port: servicePort, TargetPort: intstr.FromInt(80)}}
+	svc := newService(serviceName, nginxLabels, servicePorts, externalIPs)
+	_, err = clientset.Services(ns.Name).Create(svc)
+	Expect(err).Should(BeNil())
+}
+
+func verifyServiceReachable(port int32, ips ...string) {
+	Eventually(func() error {
+		for _, ip := range ips {
+			resp, err := http.Get(fmt.Sprintf("http://%s:%d", ip, port))
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode > 200 {
+				return fmt.Errorf("Unexpected error from nginx service: %s", resp.Status)
+			}
+		}
+		return nil
+	}, 30*time.Second, 1*time.Second).Should(BeNil())
+}
+
+func getPodsByLabels(clientset *kubernetes.Clientset, ns *v1.Namespace, podLabels map[string]string) []v1.Pod {
+	selector := labels.Set(podLabels).AsSelector()
+	pods, err := clientset.Pods(ns.Name).List(api.ListOptions{LabelSelector: selector})
+	Expect(err).NotTo(HaveOccurred())
+	return pods.Items
+}
+
+func getManagedIps(clientset *kubernetes.Clientset, pod v1.Pod, network *net.IPNet) []net.IP {
+	rst := testutils.ExecInPod(clientset, pod, "ip a show dev docker0 | grep inet")
+	Expect(rst).NotTo(BeEmpty())
+	var managedIPs []net.IP
+	for _, line := range strings.Split(rst, "\n") {
+		columns := strings.Fields(strings.TrimSpace(line))
+		ip, _, err := net.ParseCIDR(columns[1])
+		Expect(err).NotTo(HaveOccurred())
+		if network.Contains(ip) {
+			managedIPs = append(managedIPs, ip)
+		}
+	}
+	return managedIPs
 }
