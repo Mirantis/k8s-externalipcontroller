@@ -71,7 +71,7 @@ var _ = Describe("Basic", func() {
 		clientset.Namespaces().Delete(ns.Name, &api.DeleteOptions{})
 	})
 
-	It("Service should be reachable using assigned external ips", func() {
+	It("Service should be reachable using assigned external ips [pod-version]", func() {
 		By("deploying externalipcontroller pod")
 		// TODO make docker0 iface configurable
 		externalipcontroller := newPod(
@@ -95,14 +95,14 @@ var _ = Describe("Basic", func() {
 		verifyServiceReachable(nginxPort, externalIPs...)
 	})
 
-	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures", func() {
+	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [ds-version]", func() {
 		processName := "ipcontroller"
 
 		By("deploying etcd pod and service")
 		etcdName := "etcd"
 		var etcdPort int32 = 4001
-		deployEtcdPodAndService(etcdName, etcdPort, clientset, ns)
-		etcdFlag := fmt.Sprintf("-etcd=http://%s:%d", etcdName, etcdPort)
+		etcdClusterIP := deployEtcdPodAndService(etcdName, etcdPort, clientset, ns)
+		etcdFlag := fmt.Sprintf("-etcd=http://%s:%d", etcdClusterIP, etcdPort)
 
 		By("deploying externalipcontroller daemon set")
 		dsLabels := map[string]string{"app": "ipcontroller"}
@@ -123,8 +123,10 @@ var _ = Describe("Basic", func() {
 		By("assigning ip from external ip pool to a node where test is running")
 		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.107.10.10/24")).Should(BeNil())
 
-		By("verifying that ips are evenly distributed among all daemon set pods")
+		By("verifying that nginx service reachable using any externalIP")
 		verifyServiceReachable(nginxPort, externalIPs...)
+
+		By("verifying that ips are evenly distributed among all daemon set pods")
 		dsPods := getPodsByLabels(clientset, ns, dsLabels)
 		Expect(len(dsPods)).To(BeNumerically(">", 1))
 		var totalCount int
@@ -213,9 +215,13 @@ func newService(serviceName string, labels map[string]string, ports []v1.Service
 	}
 }
 
-func deployEtcdPodAndService(serviceName string, servicePort int32, clientset *kubernetes.Clientset, ns *v1.Namespace) {
+func deployEtcdPodAndService(serviceName string, servicePort int32, clientset *kubernetes.Clientset, ns *v1.Namespace) string {
 	etcdLabels := map[string]string{"app": "etcd"}
-	pod := newPod("etcd", "etcd", "gcr.io/google_containers/etcd-amd64:3.0.4", nil, etcdLabels, false, false)
+	cmd := []string{
+		"/usr/local/bin/etcd",
+		"--listen-client-urls=http://0.0.0.0:4001",
+		"--advertise-client-urls=http://0.0.0.0:4001"}
+	pod := newPod("etcd", "etcd", "gcr.io/google_containers/etcd-amd64:3.0.4", cmd, etcdLabels, false, false)
 	pod, err := clientset.Core().Pods(ns.Name).Create(pod)
 	Expect(err).NotTo(HaveOccurred())
 	testutils.WaitForReady(clientset, pod)
@@ -223,6 +229,19 @@ func deployEtcdPodAndService(serviceName string, servicePort int32, clientset *k
 	svc := newService(serviceName, etcdLabels, svcPorts, nil)
 	_, err = clientset.Core().Services(ns.Name).Create(svc)
 	Expect(err).NotTo(HaveOccurred())
+	var clusterIP string
+	Eventually(func() error {
+		svc, err := clientset.Core().Services(ns.Name).Get(svc.Name)
+		if err != nil {
+			return err
+		}
+		if svc.Spec.ClusterIP == "" {
+			return fmt.Errorf("cluster ip for service %v is not set", svc.Name)
+		}
+		clusterIP = svc.Spec.ClusterIP
+		return nil
+	}, 10*time.Second, 1*time.Second).Should(BeNil())
+	return clusterIP
 }
 
 func deployNginxPodAndService(serviceName string, servicePort int32, clientset *kubernetes.Clientset, ns *v1.Namespace, externalIPs []string) {

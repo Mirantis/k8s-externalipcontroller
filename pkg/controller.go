@@ -133,7 +133,8 @@ func (c *ExternalIpController) processItem(item interface{}) {
 	var action string
 	switch t := item.(type) {
 	case *netutils.AddCIDR:
-		fit, err := c.manager.Fit(c.Uid, t.Cidr)
+		var fit bool
+		fit, err = c.manager.Fit(c.Uid, t.Cidr)
 		if !fit && err == nil {
 			return
 		}
