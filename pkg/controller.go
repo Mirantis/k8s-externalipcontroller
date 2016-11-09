@@ -15,6 +15,8 @@
 package externalip
 
 import (
+	"reflect"
+
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/ipmanager"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
@@ -93,13 +95,13 @@ func (c *ExternalIpController) Run(stopCh chan struct{}) {
 		0,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				c.processServiceExternalIPs(obj.(*v1.Service))
+				c.processServiceExternalIPs(nil, obj.(*v1.Service), store)
 			},
 			UpdateFunc: func(old, cur interface{}) {
-				c.processServiceExternalIPs(cur.(*v1.Service))
+				c.processServiceExternalIPs(old.(*v1.Service), cur.(*v1.Service), store)
 			},
 			DeleteFunc: func(obj interface{}) {
-				c.deleteServiceExternalIPs(obj.(*v1.Service), store)
+				c.processServiceExternalIPs(cur.(*v1.Service), nil, store)
 			},
 		},
 	)
@@ -145,41 +147,70 @@ func (c *ExternalIpController) processItem(item interface{}) {
 		action = "removal"
 	}
 	if err != nil {
-		glog.Errorf("Error during IP: %s %v on %s - %v", cidr, action, c.Iface, err)
+		glog.Errorf("Error during %s of IP %v on %s - %v", action, cidr, c.Iface, err)
 		c.Queue.Add(item)
 	} else {
-		glog.V(2).Infof("IP: %v %v was successfull assigned", action, cidr)
+		glog.V(2).Infof("%s of IP %v was done successfully", action, cidr)
 	}
 }
 
-func (c *ExternalIpController) processServiceExternalIPs(service *v1.Service) {
-	for i := range service.Spec.ExternalIPs {
-		cidr := service.Spec.ExternalIPs[i] + "/" + c.Mask
-		c.Queue.Add(&netutils.AddCIDR{cidr})
+func boolMapDifference(minuend, subtrahend map) map {
+	difference = make(map[string]bool)
+
+	for key, _ := range minuend.set {
+		if !subtrahend[key] {
+			difference[key] = true
+		}
 	}
+
+	return difference
 }
 
-func (c *ExternalIpController) deleteServiceExternalIPs(service *v1.Service, store cache.Store) {
-	if len(service.Spec.ExternalIPs) == 0 {
-		return
-	}
-	ips := make(map[string]bool)
-	key, _ := cache.MetaNamespaceKeyFunc(service)
-	// collect external IPs of existing services
+func neglectIPsInUse(ips *map, serviceKey string, store cache.Store) {
 	svcList := store.List()
 	for s := range svcList {
 		svc := svcList[s].(*v1.Service)
 		svcKey, _ := cache.MetaNamespaceKeyFunc(svc)
 		if svcKey != key {
 			for _, ip := range svc.Spec.ExternalIPs {
-				ips[ip] = true
+				delete(ips, ip)
 			}
 		}
 	}
-	for _, ip := range service.Spec.ExternalIPs {
-		if _, present := ips[ip]; !present {
-			cidr := ip + "/" + c.Mask
-			c.Queue.Add(&netutils.DelCIDR{cidr})
+}
+
+func (c *ExternalIpController) processServiceExternalIPs(old, cur *v1.Service, store cache.Store) {
+	old_ips = make(map[string]bool)
+	cur_ips = make(map[string]bool)
+	key := ""
+
+	if old != nil:
+		for i := range old.Spec.ExternalIPs {
+			old_ips[old.Spec.ExternalIPs[i]] = true
 		}
+		key, _ := cache.MetaNamespaceKeyFunc(old)
+	if cur != nil:
+		for i := range cur.Spec.ExternalIPs {
+			cur_ips[cur.Spec.ExternalIPs[i]] = true
+		}
+		key, _ := cache.MetaNamespaceKeyFunc(new)
+
+	if reflect.DeepEqual(cur_ips, old_ips) {
+		return
+	}
+
+	ips_to_add = boolMapDifference(cur_ips, old_ips)
+	ips_to_remove = boolMapDifference(old_ips, cur_ips)
+
+	neglectIPsInUse(ips_to_add, key, store)
+	neglectIPsInUse(ips_to_remove, key, store)
+
+	for ip := range ips_to_add {
+		cidr := ip + "/" + c.Mask
+		c.Queue.Add(&netutils.AddCIDR{cidr})
+	}
+	for ip := range ips_to_remove {
+		cidr := ip + "/" + c.Mask
+		c.Queue.Add(&netutils.DelCIDR{cidr})
 	}
 }
