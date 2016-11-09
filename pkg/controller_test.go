@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/tools/cache"
 	fcache "k8s.io/client-go/1.5/tools/cache/testing"
 )
 
@@ -44,7 +45,7 @@ func (f *fakeIpHandler) Del(iface, cidr string) error {
 	return args.Error(0)
 }
 
-func TestControllerServicesAddwed(t *testing.T) {
+func TestControllerServicesAdded(t *testing.T) {
 	t.Log("started assign ip test")
 	source := fcache.NewFakeControllerSource()
 	syncer := make(chan struct{}, 6)
@@ -68,9 +69,13 @@ func TestControllerServicesAddwed(t *testing.T) {
 		{"10.10.0.5"},
 	}
 
+	added := make(map[string]bool)
 	for i, ips := range testIps {
 		for _, ip := range ips {
-			fake.On("Add", c.Iface, strings.Join([]string{ip, c.Mask}, "/")).Return(nil)
+			if _, present := added[ip]; !present {
+				fake.On("Add", c.Iface, strings.Join([]string{ip, c.Mask}, "/")).Return(nil)
+				added[ip] = true
+			}
 		}
 		source.Add(&v1.Service{
 			ObjectMeta: v1.ObjectMeta{Name: "service-" + string(i)},
@@ -78,7 +83,7 @@ func TestControllerServicesAddwed(t *testing.T) {
 		})
 	}
 
-	for i := 0; i < 6; i++ {
+	for i := 0; i < len(added); i++ {
 		select {
 		case <-time.After(200 * time.Millisecond):
 			t.Errorf("Waiting for calls failed. Current calls %v", fake.Calls)
@@ -103,14 +108,18 @@ func TestProcessExternalIps(t *testing.T) {
 	}
 	go c.worker()
 
+	added := make(map[string]bool)
 	for _, ips := range testIps {
 		for _, ip := range ips {
-			fake.On("Add", c.Iface, strings.Join([]string{ip, c.Mask}, "/")).Return(nil)
+			if _, present := added[ip]; !present {
+				fake.On("Add", c.Iface, strings.Join([]string{ip, c.Mask}, "/")).Return(nil)
+				added[ip] = true
+			}
 		}
-		c.processServiceExternalIPs(&v1.Service{Spec: v1.ServiceSpec{ExternalIPs: ips}})
+		c.processServiceExternalIPs(nil, &v1.Service{Spec: v1.ServiceSpec{ExternalIPs: ips}}, cache.NewStore(cache.DeletionHandlingMetaNamespaceKeyFunc))
 	}
 
-	for i := 0; i < 6; i++ {
+	for i := 0; i < len(added); i++ {
 		select {
 		case <-time.After(200 * time.Millisecond):
 			t.Errorf("Waiting for calls failed. Current calls %v", fake.Calls)
