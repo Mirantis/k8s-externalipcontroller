@@ -101,7 +101,7 @@ func (c *ExternalIpController) Run(stopCh chan struct{}) {
 				c.processServiceExternalIPs(old.(*v1.Service), cur.(*v1.Service), store)
 			},
 			DeleteFunc: func(obj interface{}) {
-				c.processServiceExternalIPs(cur.(*v1.Service), nil, store)
+				c.processServiceExternalIPs(obj.(*v1.Service), nil, store)
 			},
 		},
 	)
@@ -154,10 +154,10 @@ func (c *ExternalIpController) processItem(item interface{}) {
 	}
 }
 
-func boolMapDifference(minuend, subtrahend map) map {
-	difference = make(map[string]bool)
+func boolMapDifference(minuend, subtrahend map[string]bool) map[string]bool {
+	difference := make(map[string]bool)
 
-	for key, _ := range minuend.set {
+	for key := range minuend {
 		if !subtrahend[key] {
 			difference[key] = true
 		}
@@ -166,7 +166,7 @@ func boolMapDifference(minuend, subtrahend map) map {
 	return difference
 }
 
-func neglectIPsInUse(ips *map, serviceKey string, store cache.Store) {
+func neglectIPsInUse(ips map[string]bool, key string, store cache.Store) {
 	svcList := store.List()
 	for s := range svcList {
 		svc := svcList[s].(*v1.Service)
@@ -180,27 +180,29 @@ func neglectIPsInUse(ips *map, serviceKey string, store cache.Store) {
 }
 
 func (c *ExternalIpController) processServiceExternalIPs(old, cur *v1.Service, store cache.Store) {
-	old_ips = make(map[string]bool)
-	cur_ips = make(map[string]bool)
+	old_ips := make(map[string]bool)
+	cur_ips := make(map[string]bool)
 	key := ""
 
-	if old != nil:
+	if old != nil {
 		for i := range old.Spec.ExternalIPs {
 			old_ips[old.Spec.ExternalIPs[i]] = true
 		}
-		key, _ := cache.MetaNamespaceKeyFunc(old)
-	if cur != nil:
+		key, _ = cache.MetaNamespaceKeyFunc(old)
+	}
+	if cur != nil {
 		for i := range cur.Spec.ExternalIPs {
 			cur_ips[cur.Spec.ExternalIPs[i]] = true
 		}
-		key, _ := cache.MetaNamespaceKeyFunc(new)
+		key, _ = cache.MetaNamespaceKeyFunc(cur)
+	}
 
 	if reflect.DeepEqual(cur_ips, old_ips) {
 		return
 	}
 
-	ips_to_add = boolMapDifference(cur_ips, old_ips)
-	ips_to_remove = boolMapDifference(old_ips, cur_ips)
+	ips_to_add := boolMapDifference(cur_ips, old_ips)
+	ips_to_remove := boolMapDifference(old_ips, cur_ips)
 
 	neglectIPsInUse(ips_to_add, key, store)
 	neglectIPsInUse(ips_to_remove, key, store)
