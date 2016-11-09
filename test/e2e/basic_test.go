@@ -58,11 +58,11 @@ var _ = Describe("Basic", func() {
 	})
 
 	AfterEach(func() {
+		podList, _ := clientset.Core().Pods(ns.Name).List(api.ListOptions{LabelSelector: labels.Everything()})
 		if CurrentGinkgoTestDescription().Failed {
-			podList, _ := clientset.Core().Pods(ns.Name).List(api.ListOptions{LabelSelector: labels.Everything()})
 			testutils.DumpLogs(clientset, podList.Items...)
 		}
-		for _, pod := range pods {
+		for _, pod := range podList.Items {
 			clientset.Core().Pods(pod.Namespace).Delete(pod.Name, &api.DeleteOptions{})
 		}
 		for _, ds := range daemonSets {
@@ -240,9 +240,13 @@ func deployNginxPodAndService(serviceName string, servicePort int32, clientset *
 }
 
 func verifyServiceReachable(port int32, ips ...string) {
+	timeout := time.Duration(1 * time.Second)
+	client := http.Client{
+		Timeout: timeout,
+	}
 	Eventually(func() error {
 		for _, ip := range ips {
-			resp, err := http.Get(fmt.Sprintf("http://%s:%d", ip, port))
+			resp, err := client.Get(fmt.Sprintf("http://%s:%d", ip, port))
 			if err != nil {
 				return err
 			}

@@ -19,7 +19,7 @@ function fetch-kube {
 
 function prepare-dind-cluster {
         git clone https://github.com/sttts/kubernetes-dind-cluster.git dind
-        NUM_NODES=1 dind/dind-up-cluster.sh
+        NUM_NODES=2 dind/dind-up-cluster.sh
 }
 
 if [ -z "$WORKDIRECTORY" ]; then

@@ -26,20 +26,18 @@ function import-image {
         docker cp _output/ipcontroller.tar dind_node_1:/tmp
         # docker exec -ti dind_node_1 docker rmi -f ${IMAGE_REPO}:${IMAGE_TAG}
         docker exec -ti dind_node_1 docker import /tmp/ipcontroller.tar ${IMAGE_REPO}:${IMAGE_TAG}
+        docker cp _output/ipcontroller.tar dind_node_2:/tmp
+        #docker exec -ti dind_node_1 docker rmi -f ${IMAGE_REPO}:${IMAGE_TAG}
+        docker exec -ti dind_node_2 docker import /tmp/ipcontroller.tar ${IMAGE_REPO}:${IMAGE_TAG}
         set +o xtrace
-        echo "Finished copying docker image to dind_node_1"
+        echo "Finished copying docker image to dind nodes"
 }
 
 function run-tests {
         echo "Running e2e tests"
-        set -o xtrace
-        docker run \
-        --privileged=true \
-        --link dind_apiserver_1:apiserver \
-        -e "GOPATH=/go" \
-        -w="/go/src/github.com/Mirantis/k8s-externalipcontroller" \
-        -ti ${IMAGE_REPO}:${IMAGE_TAG} \
-        go test ./test/e2e/ --master=http://apiserver:8888 --testlink=eth0 -ginkgo.v
+        set -o xtraceo
+        go test -c -o _output/e2e.test ./test/e2e/
+        sudo ./_output/e2e.test --master=http://localhost:8888 --testlink=docker0 -ginkgo.v
         set +o xtrace
 }
 
