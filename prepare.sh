@@ -19,7 +19,7 @@ function fetch-kube {
 }
 
 function prepare-dind-cluster {
- #       git clone https://github.com/sttts/kubernetes-dind-cluster.git dind
+        git clone https://github.com/sttts/kubernetes-dind-cluster.git dind
         NUM_NODES="${NUM_NODES}" dind/dind-up-cluster.sh
         for i in `seq 1 "${NUM_NODES}"`;
         do
@@ -31,7 +31,7 @@ if [ -z "$WORKDIRECTORY" ]; then
         WORKDIRECTORY="$(mktemp -d -t ipcontrollerXXXX)"
 fi
 cd ${WORKDIRECTORY}
-#fetch-kube
+fetch-kube
 cd ${WORKDIRECTORY}/kubernetes
 prepare-dind-cluster
 cd ${DIR}

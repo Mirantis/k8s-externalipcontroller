@@ -5,6 +5,7 @@ LABEL Name="k8s-externalipcontroller" Version="0.1"
 RUN apt-get update \
         && apt-get install -y software-properties-common \
         && apt-get clean
+RUN apt-get install -y iproute2
 RUN add-apt-repository ppa:ubuntu-lxc/lxd-stable
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y golang \
         && apt-get clean
