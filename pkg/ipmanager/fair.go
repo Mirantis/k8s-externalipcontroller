@@ -20,6 +20,8 @@ import (
 
 	"golang.org/x/net/context"
 
+	"net"
+
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 	"github.com/coreos/etcd/client"
@@ -77,12 +79,16 @@ type FairEtcd struct {
 func (f *FairEtcd) Fit(uid, cidr string) (bool, error) {
 	glog.V(10).Infof("Trying to fit %s on %s", cidr, uid)
 
-	// REMOVE THIS ASAP
-	f.client.Set(context.Background(), keyFromCidr(f.opts.etcdIPCollectionKey, uid), uid, &client.SetOptions{
+	// We are using it as heartbeat for node
+	resp, err := f.client.Set(context.Background(), keyFromCidr(f.opts.etcdIPCollectionKey, uid), uid, &client.SetOptions{
 		TTL: f.opts.ttlDuration,
 	})
+	if err != nil {
+		return false, err
+	}
+	f.initLeaseManager(cidr, resp.Node)
 
-	resp, err := f.client.Get(context.Background(), f.opts.etcdIPCollectionKey, &client.GetOptions{
+	resp, err = f.client.Get(context.Background(), f.opts.etcdIPCollectionKey, &client.GetOptions{
 		Quorum:    true,
 		Recursive: true})
 	if err != nil {
@@ -192,8 +198,13 @@ func (f *FairEtcd) watchExpired(watcher client.Watcher) error {
 	if resp.Action != "expire" {
 		return nil
 	}
+	cidr := cidrFromKey(resp.Node.Key)
+	_, _, err = net.ParseCIDR(cidr)
+	if err != nil {
+		return err
+	}
 	glog.V(2).Infof("Received expire response %v", resp)
-	f.queue.Add(&netutils.AddCIDR{cidrFromKey(resp.Node.Key)})
+	f.queue.Add(&netutils.AddCIDR{cidr})
 	return nil
 }
 

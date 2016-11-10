@@ -105,9 +105,11 @@ var _ = Describe("Basic", func() {
 
 		By("deploying externalipcontroller daemon set")
 		dsLabels := map[string]string{"app": "ipcontroller"}
+		// sh -c will be PID and we will be able to stop our process
+		cmd := []string{processName, "-logtostderr=true", "-v=10",
+			"-iface=docker0", "-mask=24", "-ipmanager=fair", etcdFlag}
 		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
-			[]string{processName, "-logtostderr=true", "-v=10",
-				"-iface=docker0", "-mask=24", "-ipmanager=fair", etcdFlag}, dsLabels, true, true)
+			[]string{"sh", "-c", strings.Join(cmd, " ")}, dsLabels, true, true)
 		ds, err := clientset.Extensions().DaemonSets(ns.Name).Create(ds)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -135,6 +137,30 @@ var _ = Describe("Basic", func() {
 			totalCount += len(managedIPs)
 		}
 		Expect(totalCount).To(BeNumerically("==", len(externalIPs)))
+
+		By("making one of the controllers unreachable and verifying that all ips are rescheduled on the other pods")
+		rst := testutils.ExecInPod(clientset, dsPods[0], "pkill", "--echo", "-19", processName)
+		Expect(rst).NotTo(BeEmpty())
+
+		By("verify that all ips are reassigned to another pod")
+		Eventually(func() error {
+			allIPs := getManagedIps(clientset, dsPods[1], network)
+			if len(allIPs) != len(externalIPs) {
+				return fmt.Errorf("Not all IPs were reassigned to another pod: %v", allIPs)
+			}
+			return nil
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+
+		By("bring back controller and verify that ips are purged")
+		rst = testutils.ExecInPod(clientset, dsPods[0], "pkill", "--echo", "-18", processName)
+		Expect(rst).NotTo(BeEmpty())
+		Eventually(func() error {
+			if ips := getManagedIps(clientset, dsPods[0], network); ips == nil {
+				return nil
+			} else {
+				return fmt.Errorf("Unexpected IP %v", ips)
+			}
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
 	})
 })
 
