@@ -39,6 +39,7 @@ var defaultOpts FairEtcdOpts = FairEtcdOpts{defaultEtcdIPCollectionKey, defaultT
 // 2. Watch expired IPs and try to acquire them
 // 3. Renew ttl for acquired IPs, remove it from a node in case it was acquired by another node
 func NewFairEtcd(endpoints []string, stop chan struct{}, queue workqueue.QueueType) (*FairEtcd, error) {
+	glog.V(0).Infof("EXPIREMENTAL")
 	cfg := client.Config{
 		Endpoints:               endpoints,
 		Transport:               client.DefaultTransport,

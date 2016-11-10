@@ -42,10 +42,14 @@ type ExternalIpController struct {
 	manager   ipmanager.Manager
 }
 
-func NewExternalIpController(config *rest.Config, uid, iface, mask string, ipmanagerInst ipmanager.Manager) (*ExternalIpController, error) {
+func NewExternalIpController(config *rest.Config, uid, iface, mask string, ipmanagerInst ipmanager.Manager, queue workqueue.QueueType) (*ExternalIpController, error) {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, err
+	}
+
+	if queue == nil {
+		queue = workqueue.NewQueue()
 	}
 
 	if ipmanagerInst == nil {
@@ -131,7 +135,8 @@ func (c *ExternalIpController) processItem(item interface{}) {
 	var action string
 	switch t := item.(type) {
 	case *netutils.AddCIDR:
-		fit, err := c.manager.Fit(c.Uid, t.Cidr)
+		var fit bool
+		fit, err = c.manager.Fit(c.Uid, t.Cidr)
 		if !fit && err == nil {
 			return
 		}

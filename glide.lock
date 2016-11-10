@@ -1,6 +1,15 @@
-hash: 13ba50766df38a56b1ed0bcc0c24bcb5a8ca6eccc63a6e39cc0d0a4c5dd69588
-updated: 2016-11-02T13:13:53.406093635+02:00
+hash: f3144502d0d0893be7229f77198fedb9425850b91b701c430743a0e165a0a486
+updated: 2016-11-09T12:52:37.06510461+02:00
 imports:
+- name: cloud.google.com/go
+  version: 3b1ae45394a234c385be014e9a488f2bb6eef821
+  subpackages:
+  - compute/metadata
+  - internal
+- name: github.com/Azure/go-ansiterm
+  version: 70b2c90b260171e829f1ebd7c17f600c11858dbe
+  subpackages:
+  - winterm
 - name: github.com/blang/semver
   version: 31b736133b98f26d5e078ec9eb591666edfd091f
 - name: github.com/coreos/etcd
@@ -33,6 +42,24 @@ imports:
   subpackages:
   - digest
   - reference
+- name: github.com/docker/docker
+  version: b9f10c951893f9a00865890a5232e85d770c1087
+  subpackages:
+  - pkg/jsonlog
+  - pkg/jsonmessage
+  - pkg/longpath
+  - pkg/mount
+  - pkg/stdcopy
+  - pkg/symlink
+  - pkg/system
+  - pkg/term
+  - pkg/term/windows
+- name: github.com/docker/go-units
+  version: 0bbddae09c5a5419a8c6dcdd7ff90da3d450393b
+- name: github.com/docker/spdystream
+  version: 449fdfce4d962303d702fec724ef0ad181c92528
+  subpackages:
+  - spdy
 - name: github.com/emicklei/go-restful
   version: 89ef8af493ab468a45a42bb0d89a06fccdd2fb22
   subpackages:
@@ -76,6 +103,8 @@ imports:
   - buffer
   - jlexer
   - jwriter
+- name: github.com/mitchellh/go-wordwrap
+  version: ad45545899c7b13c020ea92b2072220eefad42b8
 - name: github.com/onsi/ginkgo
   version: 462326b1628e124b23f42e87a8f2750e3c4e2d24
   subpackages:
@@ -116,6 +145,8 @@ imports:
   version: 8a290539e2e8629dbc4e6bad948158f790ec31f4
 - name: github.com/PuerkitoBio/urlesc
   version: 5bd2802263f21d8788851d5305584c82a5c75d7e
+- name: github.com/Sirupsen/logrus
+  version: 51fe59aca108dc5680109e7b2051cbdcfa5a253c
 - name: github.com/spf13/pflag
   version: 1560c1005499d61b80f865c04d39ca7505bf7f0b
 - name: github.com/stretchr/testify
@@ -143,11 +174,13 @@ imports:
   version: 6acef71eb69611914f7a30939ea9f6e194c78172
   subpackages:
   - context
+  - context/ctxhttp
   - http2
   - http2/hpack
   - idna
+  - websocket
 - name: golang.org/x/oauth2
-  version: 045497edb6234273d67dbc25da3f2ddbc4c4cacf
+  version: 3c3a985cb79f52a3190fbc056984415ca6763d01
   subpackages:
   - google
   - internal
@@ -171,7 +204,7 @@ imports:
   - unicode/norm
   - width
 - name: google.golang.org/appengine
-  version: 12d5545dc1cfa6047a286d5e853841b6471f4c19
+  version: 4f7eeb5305a4ba1966344836ba4af9996b7b4e05
   subpackages:
   - internal
   - internal/app_identity
@@ -182,13 +215,6 @@ imports:
   - internal/remote_api
   - internal/urlfetch
   - urlfetch
-- name: google.golang.org/cloud
-  version: 975617b05ea8a58727e6c1a06b6161ff4185a9f2
-  subpackages:
-  - compute/metadata
-  - internal
-  - internal/opts
-  - storage
 - name: gopkg.in/inf.v0
   version: 3887ee99ecf07df5b447e9b00d9c0b2adaa9f3e4
 - name: gopkg.in/yaml.v2
@@ -305,6 +331,74 @@ imports:
   - 1.5/tools/clientcmd/api/v1
   - 1.5/tools/metrics
   - 1.5/transport
+- name: k8s.io/kubernetes
+  version: 42fe4ab0270e44c750d77c682e2fcab394aeb392
+  subpackages:
+  - pkg/api
+  - pkg/api/errors
+  - pkg/api/meta
+  - pkg/api/meta/metatypes
+  - pkg/api/resource
+  - pkg/api/unversioned
+  - pkg/api/v1
+  - pkg/api/validation/path
+  - pkg/apis/autoscaling
+  - pkg/apis/batch
+  - pkg/apis/certificates
+  - pkg/apis/extensions
+  - pkg/auth/user
+  - pkg/client/metrics
+  - pkg/client/restclient
+  - pkg/client/transport
+  - pkg/client/unversioned/clientcmd/api
+  - pkg/client/unversioned/remotecommand
+  - pkg/conversion
+  - pkg/conversion/queryparams
+  - pkg/fields
+  - pkg/genericapiserver/openapi/common
+  - pkg/httplog
+  - pkg/kubelet/server/remotecommand
+  - pkg/labels
+  - pkg/runtime
+  - pkg/runtime/serializer
+  - pkg/runtime/serializer/json
+  - pkg/runtime/serializer/protobuf
+  - pkg/runtime/serializer/recognizer
+  - pkg/runtime/serializer/streaming
+  - pkg/runtime/serializer/versioning
+  - pkg/selection
+  - pkg/types
+  - pkg/util
+  - pkg/util/cert
+  - pkg/util/clock
+  - pkg/util/errors
+  - pkg/util/exec
+  - pkg/util/flowcontrol
+  - pkg/util/framer
+  - pkg/util/httpstream
+  - pkg/util/httpstream/spdy
+  - pkg/util/integer
+  - pkg/util/interrupt
+  - pkg/util/intstr
+  - pkg/util/json
+  - pkg/util/labels
+  - pkg/util/net
+  - pkg/util/parsers
+  - pkg/util/rand
+  - pkg/util/runtime
+  - pkg/util/sets
+  - pkg/util/term
+  - pkg/util/uuid
+  - pkg/util/validation
+  - pkg/util/validation/field
+  - pkg/util/wait
+  - pkg/util/wsstream
+  - pkg/util/yaml
+  - pkg/version
+  - pkg/watch
+  - pkg/watch/versioned
+  - third_party/forked/golang/netutil
+  - third_party/forked/golang/reflect
 testImports:
 - name: github.com/stretchr/objx
-  version: cbeaeb16a013161a98496fad62933b1d21786672
+  version: 1a9d0bb9f541897e62256577b352fdbc1fb4fd94
