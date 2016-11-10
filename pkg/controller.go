@@ -70,7 +70,7 @@ func NewExternalIpController(config *rest.Config, uid, iface, mask string, ipman
 		Mask:      mask,
 		source:    lw,
 		ipHandler: netutils.LinuxIPHandler{},
-		Queue:     workqueue.NewQueue(),
+		Queue:     queue,
 		manager:   ipmanagerInst,
 	}, nil
 }
