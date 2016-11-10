@@ -98,6 +98,7 @@ var _ = Describe("Network [sudo]", func() {
 			for _, ip := range ips {
 				expectedIps[strings.Join([]string{ip, c.Mask}, "/")] = true
 			}
+
 			svc := &v1.Service{
 				ObjectMeta: v1.ObjectMeta{Name: "service-" + strconv.Itoa(i)},
 				Spec:       v1.ServiceSpec{ExternalIPs: ips},
@@ -107,9 +108,16 @@ var _ = Describe("Network [sudo]", func() {
 		}
 		By("waiting until ips will be assigned")
 		verifyAddrs(link, expectedIps)
+		By("updating service with new ip list and waiting until ips assignment will be updated")
+		svcToUpdate := services["service-2"]
+		svcToUpdate.Spec.ExternalIPs = []string{"10.10.0.7"}
+		source.Modify(svcToUpdate)
+		expectedIps["10.10.0.7/24"] = true
+		delete(expectedIps, "10.10.0.5/24")
+		verifyAddrs(link, expectedIps)
 		By("removing service with single ip and waiting until this ip won't be on a link")
 		source.Delete(services["service-2"])
-		delete(expectedIps, "10.10.0.5/24")
+		delete(expectedIps, "10.10.0.7/24")
 		verifyAddrs(link, expectedIps)
 		By("removing service with ips that are assigned to some other service and confirming that they are still on link")
 		source.Delete(services["service-1"])
