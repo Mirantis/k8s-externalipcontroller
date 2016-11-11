@@ -18,8 +18,6 @@ import (
 	"strings"
 	"time"
 
-	"crypto/rand"
-
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	"github.com/golang/glog"
 	"k8s.io/client-go/1.5/kubernetes"
@@ -28,9 +26,52 @@ import (
 	"k8s.io/client-go/1.5/pkg/api/unversioned"
 	"k8s.io/client-go/1.5/pkg/api/v1"
 	"k8s.io/client-go/1.5/pkg/labels"
+	"k8s.io/client-go/1.5/pkg/runtime"
+	"k8s.io/client-go/1.5/pkg/watch"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/cache"
 )
+
+func NewIPClaimScheduler(config *rest.Config, mask string) (*ipClaimScheduler, error) {
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	ext, err := extensions.WrapClientsetWithExtensions(clientset, config)
+	if err != nil {
+		return nil, err
+	}
+
+	serviceSource := &cache.ListWatch{
+		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
+			return clientset.Core().Services(api.NamespaceAll).List(options)
+		},
+		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			return clientset.Core().Services(api.NamespaceAll).Watch(options)
+		},
+	}
+
+	claimSource := &cache.ListWatch{
+		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
+			return ext.IpClaims().List(options)
+		},
+		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			return ext.IpClaims().Watch(options)
+		},
+	}
+	return &ipClaimScheduler{
+		Config:              config,
+		Clientset:           clientset,
+		ExtensionsClientset: ext,
+		DefaultMask:         mask,
+
+		now:             unversioned.Now,
+		livenessPeriond: 5 * time.Second,
+		monitorPeriod:   3 * time.Second,
+		serviceSource:   serviceSource,
+		claimSource:     claimSource,
+	}, nil
+}
 
 type ipClaimScheduler struct {
 	Config              *rest.Config
@@ -85,7 +126,10 @@ func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 				svc := obj.(*v1.Service)
 				for _, ip := range svc.Spec.ExternalIPs {
 					if _, ok := refs[ip]; !ok {
-						deleteIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
+						err := deleteIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
+						if err != nil {
+							glog.Errorf("Unable to delete %v", err)
+						}
 					}
 				}
 			},
@@ -114,8 +158,7 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 					glog.Errorf("No available ip-nodes to schedule claim")
 				}
 				claim.SetLabels(map[string]string{"ipnode": ipnodes.Items[0].Name})
-				nodeIndex := random(0, len(ipnodes.Items)-1)
-				claim.Spec.NodeName = ipnodes.Items[nodeIndex].Name
+				claim.Spec.NodeName = ipnodes.Items[0].Name
 				_, err = s.ExtensionsClientset.IpClaims().Update(claim)
 				if err != nil {
 					glog.Errorf("Claim update error %v", err)
@@ -180,9 +223,4 @@ func tryCreateIPClaim(ext *extensions.WrappedClientset, ip, mask string) error {
 func deleteIPClaim(ext *extensions.WrappedClientset, ip, mask string) error {
 	key := strings.Join([]string{ip, mask}, "-")
 	return ext.IpClaims().Delete(key, &api.DeleteOptions{})
-}
-
-func random(min, max int) int {
-	rand.Seed(time.Now().Unix())
-	return rand.Intn(max-min) + min
 }
