@@ -79,7 +79,6 @@ type IpClaimClient struct {
 }
 
 func (c *IPNodesClient) Create(ipnode *IpNode) (result *IpNode, err error) {
-	ipnode.TypeMeta.Kind = "IpNode"
 	result = &IpNode{}
 	err = c.client.Post().
 		Namespace("default").
@@ -130,6 +129,17 @@ func (c *IPNodesClient) Delete(name string, options *api.DeleteOptions) error {
 		Body(options).
 		Do().
 		Error()
+}
+
+func (c *IpClaimClient) Create(ipclaim *IpClaim) (result *IpClaim, err error) {
+	result = &IpClaim{}
+	err = c.client.Post().
+		Namespace("default").
+		Resource("ipclaim").
+		Body(ipclaim).
+		Do().
+		Into(result)
+	return
 }
 
 func (c *IpClaimClient) List(opts api.ListOptions) (result *IpClaimList, err error) {

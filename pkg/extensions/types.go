@@ -53,6 +53,8 @@ type IpNode struct {
 
 	// Standard object metadata
 	v1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+	UpdateTimestamp unversioned.Time `json:"updateTimestamp,omitempty" protobuf:"bytes,8,opt,name=updateTimestamp"`
 }
 
 type IpNodeList struct {
@@ -86,4 +88,6 @@ type IpClaimList struct {
 type IpClaimSpec struct {
 	// NodeName used to identify where IPClaim is assigned (IPNode.Name)
 	NodeName string `json:"nodeName,omitempty" protobuf:"bytes,10,opt,name=nodeName"`
+	Cidr     string `json:"cidr,omitempty" protobuf:"bytes,10,opt,name=cidr"`
+	Link     string `json:"link" protobuf:"bytes,10,opt,name=link"`
 }
