@@ -16,6 +16,7 @@ package scheduler
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
@@ -23,7 +24,6 @@ import (
 	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/errors"
-	"k8s.io/client-go/1.5/pkg/api/unversioned"
 	"k8s.io/client-go/1.5/pkg/api/v1"
 	"k8s.io/client-go/1.5/pkg/labels"
 	"k8s.io/client-go/1.5/pkg/runtime"
@@ -65,11 +65,12 @@ func NewIPClaimScheduler(config *rest.Config, mask string) (*ipClaimScheduler, e
 		ExtensionsClientset: ext,
 		DefaultMask:         mask,
 
-		now:             unversioned.Now,
-		livenessPeriond: 5 * time.Second,
-		monitorPeriod:   3 * time.Second,
-		serviceSource:   serviceSource,
-		claimSource:     claimSource,
+		monitorPeriod: 4 * time.Second,
+		serviceSource: serviceSource,
+		claimSource:   claimSource,
+
+		observedGeneration: make(map[string]int64),
+		liveIpNodes:        make(map[string]struct{}),
 	}, nil
 }
 
@@ -82,24 +83,27 @@ type ipClaimScheduler struct {
 	serviceSource cache.ListerWatcher
 	claimSource   cache.ListerWatcher
 
-	now             func() unversioned.Time
-	livenessPeriond time.Duration
-	monitorPeriod   time.Duration
+	monitorPeriod      time.Duration
+	observedGeneration map[string]int64
+
+	liveSync    sync.Mutex
+	liveIpNodes map[string]struct{}
+
+	claimStore   cache.Store
+	serviceStore cache.Store
 }
 
 func (s *ipClaimScheduler) Run(stop chan struct{}) {
 	go s.serviceWatcher(stop)
 	go s.claimWatcher(stop)
-	go s.monitorIPNodes(stop)
+	go s.monitorIPNodes(stop, time.Tick(s.monitorPeriod))
 	<-stop
 }
 
 // serviceWatcher creates/delets IPClaim based on requirements from
 // service
 func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
-	var store cache.Store
-	var controller *cache.Controller
-	store, controller = cache.NewInformer(
+	store, controller := cache.NewInformer(
 		s.serviceSource,
 		&v1.Service{},
 		0,
@@ -119,7 +123,7 @@ func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 			},
 			DeleteFunc: func(obj interface{}) {
 				refs := map[string]struct{}{}
-				svcList := store.List()
+				svcList := s.serviceStore.List()
 				for i := range svcList {
 					svc := svcList[i].(*v1.Service)
 					for _, ip := range svc.Spec.ExternalIPs {
@@ -138,11 +142,12 @@ func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 			},
 		},
 	)
+	s.serviceStore = store
 	controller.Run(stop)
 }
 
 func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
-	_, controller := cache.NewInformer(
+	store, controller := cache.NewInformer(
 		s.claimSource,
 		&extensions.IpClaim{},
 		0,
@@ -155,13 +160,16 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 				ipnodes, err := s.ExtensionsClientset.IPNodes().List(api.ListOptions{})
 				if err != nil {
 					glog.Errorf("Can't get ip-nodes list %v", err)
+					return
 				}
 				// this needs to be queued and requeud in case of node absence
 				if len(ipnodes.Items) == 0 {
 					glog.Errorf("No available ip-nodes to schedule claim")
+					return
 				}
-				claim.SetLabels(map[string]string{"ipnode": ipnodes.Items[0].Name})
-				claim.Spec.NodeName = ipnodes.Items[0].Name
+				ipnode := ipnodes.Items[0]
+				claim.SetLabels(map[string]string{"ipnode": ipnode.Name})
+				claim.Spec.NodeName = ipnode.Name
 				_, err = s.ExtensionsClientset.IPClaims().Update(claim)
 				if err != nil {
 					glog.Errorf("Claim update error %v", err)
@@ -169,46 +177,62 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 			},
 		},
 	)
+	s.claimStore = store
 	controller.Run(stop)
 }
 
-func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}) {
+func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time.Time) {
 	for {
 		select {
 		case <-stop:
 			return
-		case <-time.Tick(s.monitorPeriod):
+		case <-ticker:
 			ipnodes, err := s.ExtensionsClientset.IPNodes().List(api.ListOptions{})
 			if err != nil {
 				glog.Errorf("Error in monitor ip-nodes %v", err)
 			}
-			// TODO rework it to be not time based
-			// each object has revision in it which is monotonically increasing
-			// thus we need to setup ticker for each node and reset it if revision changed
+
 			for _, ipnode := range ipnodes.Items {
-				if ipnode.UpdateTimestamp.Add(s.livenessPeriond).Before(s.now().Time) {
-					// requeue all claims allocated to this node
-					// select claims using labels and update those with Spec.NodeName = ""
+				generation := s.observedGeneration[ipnode.Name]
+				if generation < ipnode.Generation {
+					s.observedGeneration[ipnode.Name] = ipnode.Generation
+					s.liveSync.Lock()
+					s.liveIpNodes[ipnode.Name] = struct{}{}
+					s.liveSync.Unlock()
+				} else {
+					s.liveSync.Lock()
+					delete(s.liveIpNodes, ipnode.Name)
+					s.liveSync.Unlock()
 					labelSelector := labels.Set(map[string]string{"ipnode": ipnode.Name})
-					claims, err := s.ExtensionsClientset.IPClaims().List(api.ListOptions{
-						LabelSelector: labelSelector.AsSelector(),
-					})
+					ipclaims, err := s.ExtensionsClientset.IPClaims().List(
+						api.ListOptions{
+							LabelSelector: labelSelector.AsSelector(),
+						},
+					)
 					if err != nil {
-						glog.Errorf("Error fetching claims for node %v", err)
+						glog.Errorf("Error fetching list of claims: %v", err)
+						break
 					}
-					for _, claim := range claims.Items {
-						claim.Spec.NodeName = ""
-						claim.SetLabels(map[string]string{})
-						// don't update just requeue claim
-						_, err = s.ExtensionsClientset.IPClaims().Update(&claim)
+					for _, ipclaim := range ipclaims.Items {
+						// TODO don't update - send to queue for rescheduling instead
+						ipclaim.Spec.NodeName = ""
+						ipclaim.SetLabels(map[string]string{})
+						_, err := s.ExtensionsClientset.IPClaims().Update(&ipclaim)
 						if err != nil {
-							glog.Errorf("Error during update %v", err)
+							glog.Errorf("Error during ipclaim update %v", err)
 						}
 					}
 				}
 			}
 		}
 	}
+}
+
+func (s *ipClaimScheduler) isLive(name string) bool {
+	s.liveSync.Lock()
+	defer s.liveSync.Unlock()
+	_, ok := s.liveIpNodes[name]
+	return ok
 }
 
 func tryCreateIPClaim(ext extensions.ExtensionsClientset, ip, mask string) error {

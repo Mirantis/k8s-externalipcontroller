@@ -16,6 +16,7 @@ package scheduler
 
 import (
 	"testing"
+	"time"
 
 	"runtime"
 
@@ -51,13 +52,14 @@ func (f *fakeIpClaims) Create(ipclaim *extensions.IpClaim) (*extensions.IpClaim,
 	return ipclaim, args.Error(0)
 }
 
-func (f *fakeIpClaims) List(_ api.ListOptions) (*extensions.IpClaimList, error) {
-	return nil, nil
+func (f *fakeIpClaims) List(opts api.ListOptions) (*extensions.IpClaimList, error) {
+	args := f.Called(opts)
+	return args.Get(0).(*extensions.IpClaimList), args.Error(1)
 }
 
 func (f *fakeIpClaims) Update(ipclaim *extensions.IpClaim) (*extensions.IpClaim, error) {
 	args := f.Called(ipclaim)
-	return args.Get(0).(*extensions.IpClaim), args.Error(1)
+	return ipclaim, args.Error(0)
 }
 
 func (f *fakeIpClaims) Delete(name string, opts *api.DeleteOptions) error {
@@ -78,8 +80,9 @@ func (f *fakeIpNodes) Create(ipnode *extensions.IpNode) (*extensions.IpNode, err
 	return args.Get(0).(*extensions.IpNode), args.Error(1)
 }
 
-func (f *fakeIpNodes) List(_ api.ListOptions) (*extensions.IpNodeList, error) {
-	return nil, nil
+func (f *fakeIpNodes) List(opts api.ListOptions) (*extensions.IpNodeList, error) {
+	args := f.Called(opts)
+	return args.Get(0).(*extensions.IpNodeList), args.Error(1)
 }
 
 func (f *fakeIpNodes) Update(ipnode *extensions.IpNode) (*extensions.IpNode, error) {
@@ -135,5 +138,99 @@ func TestServiceWatcher(t *testing.T) {
 	deleteCall := ext.ipclaims.Calls[1]
 	ipclaimName := deleteCall.Arguments[0].(string)
 	assert.Equal(t, ipclaimName, "10.10.0.2-24", "Unexpected name")
+}
 
+func TestClaimWatcher(t *testing.T) {
+	ext := newFakeExtClientset()
+	lw := fcache.NewFakeControllerSource()
+	stop := make(chan struct{})
+	s := ipClaimScheduler{
+		claimSource:         lw,
+		ExtensionsClientset: ext,
+	}
+	go s.claimWatcher(stop)
+	defer close(stop)
+	claim := &extensions.IpClaim{
+		ObjectMeta: v1.ObjectMeta{Name: "10.10.0.2-24"},
+		Spec:       extensions.IpClaimSpec{Cidr: "10.10.0.2/24"},
+	}
+	lw.Add(claim)
+	ipnodesList := &extensions.IpNodeList{
+		Items: []extensions.IpNode{
+			{
+				ObjectMeta: v1.ObjectMeta{Name: "first"},
+			},
+		},
+	}
+	ext.ipnodes.On("List", mock.Anything).Return(ipnodesList, nil)
+	ext.ipclaims.On("Update", mock.Anything).Return(nil)
+	runtime.Gosched()
+	assert.Equal(t, len(ext.ipclaims.Calls), 1, "Unexpected calls to ipclaims")
+	updatedClaim := ext.ipclaims.Calls[0].Arguments[0].(*extensions.IpClaim)
+	assert.Equal(t, updatedClaim.Labels, map[string]string{"ipnode": "first"},
+		"Labels should be set to scheduled node")
+	assert.Equal(t, updatedClaim.Spec.NodeName, "first", "NodeName should be set to scheduled node")
+}
+
+func TestMonitorIpNodes(t *testing.T) {
+	ext := newFakeExtClientset()
+	stop := make(chan struct{})
+	ticker := make(chan time.Time, 2)
+	for i := 0; i < 2; i++ {
+		ticker <- time.Time{}
+	}
+	s := ipClaimScheduler{
+		ExtensionsClientset: ext,
+		liveIpNodes:         make(map[string]struct{}),
+		observedGeneration:  make(map[string]int64),
+	}
+	ipnodesList := &extensions.IpNodeList{
+		Items: []extensions.IpNode{
+			{
+				ObjectMeta: v1.ObjectMeta{
+					Name:       "first",
+					Generation: 666,
+				},
+			},
+		},
+	}
+	ipclaimsList := &extensions.IpClaimList{
+		Items: []extensions.IpClaim{
+			{
+				ObjectMeta: v1.ObjectMeta{
+					Name:   "10.10.0.1-24",
+					Labels: map[string]string{"ipnode": "first"},
+				},
+				Spec: extensions.IpClaimSpec{
+					Cidr:     "10.10.0.1/24",
+					NodeName: "first",
+				},
+			},
+			{
+				ObjectMeta: v1.ObjectMeta{
+					Name:   "10.10.0.2-24",
+					Labels: map[string]string{"ipnode": "first"},
+				},
+				Spec: extensions.IpClaimSpec{
+					Cidr:     "10.10.0.2/24",
+					NodeName: "first",
+				},
+			},
+		},
+	}
+	ext.ipnodes.On("List", mock.Anything).Return(ipnodesList, nil).Twice()
+	ext.ipclaims.On("List", mock.Anything).Return(ipclaimsList, nil)
+	ext.ipclaims.On("Update", mock.Anything).Return(nil).Twice()
+	go s.monitorIPNodes(stop, ticker)
+	defer close(stop)
+	runtime.Gosched()
+	assert.Equal(t, 2, len(ext.ipnodes.Calls), "Unexpected calls to ipnodes")
+	assert.Equal(t, 3, len(ext.ipclaims.Calls), "Unexpected calls to ipclaims")
+	updateCalls := ext.ipclaims.Calls[1:]
+	for _, call := range updateCalls {
+		ipclaim := call.Arguments[0].(*extensions.IpClaim)
+		assert.Equal(t, ipclaim.Labels, map[string]string{}, "monitor should clean all ipclaim labels")
+		assert.Equal(t, ipclaim.Spec.NodeName, "", "monitor should clean node name")
+	}
+	assert.Equal(t, s.isLive("first"), false, "first node shouldn't be considered live")
 }
