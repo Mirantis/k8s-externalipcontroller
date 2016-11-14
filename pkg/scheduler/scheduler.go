@@ -85,9 +85,8 @@ type ipClaimScheduler struct {
 
 	monitorPeriod      time.Duration
 	observedGeneration map[string]int64
-
-	liveSync    sync.Mutex
-	liveIpNodes map[string]struct{}
+	liveSync           sync.Mutex
+	liveIpNodes        map[string]struct{}
 
 	claimStore   cache.Store
 	serviceStore cache.Store

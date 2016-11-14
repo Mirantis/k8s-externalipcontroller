@@ -21,6 +21,7 @@ import (
 	"runtime"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"k8s.io/client-go/1.5/pkg/api"
