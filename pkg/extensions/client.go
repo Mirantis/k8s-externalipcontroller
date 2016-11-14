@@ -65,6 +65,7 @@ type IPClaimsInterface interface {
 
 type IPNodesInterface interface {
 	Create(*IpNode) (*IpNode, error)
+	Get(name string) (*IpNode, error)
 	List(api.ListOptions) (*IpNodeList, error)
 	Watch(api.ListOptions) (watch.Interface, error)
 	Update(*IpNode) (*IpNode, error)
@@ -138,6 +139,16 @@ func (c *IPNodesClient) Delete(name string, options *api.DeleteOptions) error {
 		Body(options).
 		Do().
 		Error()
+}
+
+func (c *IPNodesClient) Get(name string) (result *IpNode, err error) {
+	result = &IpNode{}
+	err = c.client.Get().
+		Resource("ipnodes").
+		Name(name).
+		Do().
+		Into(result)
+	return
 }
 
 func (c *IpClaimClient) Create(ipclaim *IpClaim) (result *IpClaim, err error) {

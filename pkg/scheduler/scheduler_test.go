@@ -96,6 +96,11 @@ func (f *fakeIpNodes) Delete(name string, opts *api.DeleteOptions) error {
 	return args.Error(0)
 }
 
+func (f *fakeIpNodes) Get(name string) (*extensions.IpNode, error) {
+	args := f.Called(name)
+	return args.Get(0).(*extensions.IpNode), args.Error(1)
+}
+
 func (f *fakeIpNodes) Watch(_ api.ListOptions) (watch.Interface, error) {
 	return nil, nil
 }
