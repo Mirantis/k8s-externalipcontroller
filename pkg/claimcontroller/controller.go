@@ -20,8 +20,8 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
-	"github.com/golang/glog"
 
+	"github.com/golang/glog"
 	"k8s.io/client-go/1.5/tools/cache"
 )
 
@@ -98,7 +98,7 @@ func (c *claimController) worker() {
 }
 
 func (c *claimController) processClaim(ipclaim *extensions.IpClaim) error {
-	if ipclaim.DeletionTimestamp != nil {
+	if _, exists, _ := c.claimStore.Get(ipclaim); !exists {
 		return c.iphandler.Del(c.Iface, ipclaim.Spec.Cidr)
 	}
 	if ipclaim.Spec.NodeName == c.Uid {
