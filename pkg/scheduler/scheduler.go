@@ -53,10 +53,10 @@ func NewIPClaimScheduler(config *rest.Config, mask string) (*ipClaimScheduler, e
 
 	claimSource := &cache.ListWatch{
 		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
-			return ext.IpClaims().List(options)
+			return ext.IPClaims().List(options)
 		},
 		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
-			return ext.IpClaims().Watch(options)
+			return ext.IPClaims().Watch(options)
 		},
 	}
 	return &ipClaimScheduler{
@@ -76,11 +76,12 @@ func NewIPClaimScheduler(config *rest.Config, mask string) (*ipClaimScheduler, e
 type ipClaimScheduler struct {
 	Config              *rest.Config
 	Clientset           *kubernetes.Clientset
-	ExtensionsClientset *extensions.WrappedClientset
+	ExtensionsClientset extensions.ExtensionsClientset
 	DefaultMask         string
 
-	serviceSource   cache.ListerWatcher
-	claimSource     cache.ListerWatcher
+	serviceSource cache.ListerWatcher
+	claimSource   cache.ListerWatcher
+
 	now             func() unversioned.Time
 	livenessPeriond time.Duration
 	monitorPeriod   time.Duration
@@ -93,6 +94,8 @@ func (s *ipClaimScheduler) Run(stop chan struct{}) {
 	<-stop
 }
 
+// serviceWatcher creates/delets IPClaim based on requirements from
+// service
 func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 	var store cache.Store
 	var controller *cache.Controller
@@ -159,7 +162,7 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 				}
 				claim.SetLabels(map[string]string{"ipnode": ipnodes.Items[0].Name})
 				claim.Spec.NodeName = ipnodes.Items[0].Name
-				_, err = s.ExtensionsClientset.IpClaims().Update(claim)
+				_, err = s.ExtensionsClientset.IPClaims().Update(claim)
 				if err != nil {
 					glog.Errorf("Claim update error %v", err)
 				}
@@ -180,12 +183,14 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}) {
 				glog.Errorf("Error in monitor ip-nodes %v", err)
 			}
 			// TODO rework it to be not time based
+			// each object has revision in it which is monotonically increasing
+			// thus we need to setup ticker for each node and reset it if revision changed
 			for _, ipnode := range ipnodes.Items {
 				if ipnode.UpdateTimestamp.Add(s.livenessPeriond).Before(s.now().Time) {
 					// requeue all claims allocated to this node
 					// select claims using labels and update those with Spec.NodeName = ""
 					labelSelector := labels.Set(map[string]string{"ipnode": ipnode.Name})
-					claims, err := s.ExtensionsClientset.IpClaims().List(api.ListOptions{
+					claims, err := s.ExtensionsClientset.IPClaims().List(api.ListOptions{
 						LabelSelector: labelSelector.AsSelector(),
 					})
 					if err != nil {
@@ -195,7 +200,7 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}) {
 						claim.Spec.NodeName = ""
 						claim.SetLabels(map[string]string{})
 						// don't update just requeue claim
-						_, err = s.ExtensionsClientset.IpClaims().Update(&claim)
+						_, err = s.ExtensionsClientset.IPClaims().Update(&claim)
 						if err != nil {
 							glog.Errorf("Error during update %v", err)
 						}
@@ -206,21 +211,21 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}) {
 	}
 }
 
-func tryCreateIPClaim(ext *extensions.WrappedClientset, ip, mask string) error {
+func tryCreateIPClaim(ext extensions.ExtensionsClientset, ip, mask string) error {
 	// check how k8s stores keys in etcd
 	key := strings.Join([]string{ip, mask}, "-")
 	cidr := strings.Join([]string{ip, mask}, "/")
 	ipclaim := &extensions.IpClaim{
 		ObjectMeta: v1.ObjectMeta{Name: key},
 		Spec:       extensions.IpClaimSpec{Cidr: cidr}}
-	_, err := ext.IpClaims().Create(ipclaim)
+	_, err := ext.IPClaims().Create(ipclaim)
 	if errors.IsAlreadyExists(err) {
 		return nil
 	}
 	return err
 }
 
-func deleteIPClaim(ext *extensions.WrappedClientset, ip, mask string) error {
+func deleteIPClaim(ext extensions.ExtensionsClientset, ip, mask string) error {
 	key := strings.Join([]string{ip, mask}, "-")
-	return ext.IpClaims().Delete(key, &api.DeleteOptions{})
+	return ext.IPClaims().Delete(key, &api.DeleteOptions{})
 }

@@ -30,9 +30,7 @@ func WrapClientsetWithExtensions(clientset *kubernetes.Clientset, config *rest.C
 		return nil, err
 	}
 	return &WrappedClientset{
-		clientset,
-		&IPNodesGetter{rest},
-		&IpClaimGetter{rest},
+		client: rest,
 	}, nil
 }
 
@@ -48,30 +46,41 @@ func extensionClient(config *rest.Config) (*rest.RESTClient, error) {
 	return rest.RESTClientFor(config)
 }
 
+type ExtensionsClientset interface {
+	IPNodes() IPNodesInterface
+	IPClaims() IPClaimsInterface
+}
+
 type WrappedClientset struct {
-	*kubernetes.Clientset
-	*IPNodesGetter
-	*IpClaimGetter
-}
-
-type IPNodesGetter struct {
 	client *rest.RESTClient
 }
 
-type IpClaimGetter struct {
-	client *rest.RESTClient
+type IPClaimsInterface interface {
+	Create(*IpClaim) (*IpClaim, error)
+	List(api.ListOptions) (*IpClaimList, error)
+	Watch(api.ListOptions) (watch.Interface, error)
+	Update(*IpClaim) (*IpClaim, error)
+	Delete(string, *api.DeleteOptions) error
 }
 
-func (ip *IPNodesGetter) IPNodes() *IPNodesClient {
-	return &IPNodesClient{ip.client}
+type IPNodesInterface interface {
+	Create(*IpNode) (*IpNode, error)
+	List(api.ListOptions) (*IpNodeList, error)
+	Watch(api.ListOptions) (watch.Interface, error)
+	Update(*IpNode) (*IpNode, error)
+	Delete(string, *api.DeleteOptions) error
+}
+
+func (w *WrappedClientset) IPNodes() IPNodesInterface {
+	return &IPNodesClient{w.client}
+}
+
+func (w *WrappedClientset) IPClaims() IPClaimsInterface {
+	return &IpClaimClient{w.client}
 }
 
 type IPNodesClient struct {
 	client *rest.RESTClient
-}
-
-func (c *IpClaimGetter) IpClaims() *IpClaimClient {
-	return &IpClaimClient{c.client}
 }
 
 type IpClaimClient struct {
