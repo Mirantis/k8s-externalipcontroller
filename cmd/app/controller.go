@@ -12,46 +12,58 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package app
 
 import (
-	"flag"
 	"os"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/claimcontroller"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
-	"github.com/Mirantis/k8s-externalipcontroller/pkg/scheduler"
 
-	"github.com/golang/glog"
+	"github.com/spf13/cobra"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/clientcmd"
 )
 
-func main() {
-	mask := flag.String("mask", "32", "mask part of the cidr")
-	kubeconfig := flag.String("kubeconfig", "", "kubeconfig to use with kubernetes client")
-	flag.Parse()
+var iface string
+
+func init() {
+	Controller.Flags().StringVar(&iface, "iface", "eth0", "Current interface will be used to assign ip addresses")
+	Root.AddCommand(Controller)
+}
+
+var Controller = &cobra.Command{
+	Use: "controller",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return InitController()
+	},
+}
+
+func InitController() error {
 	var err error
 	var config *rest.Config
-	if *kubeconfig != "" {
-		config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
+	if kubeconfig != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {
-		glog.Infof("kubeconfig is empty, assuming we are running in kubernetes cluster")
 		config, err = rest.InClusterConfig()
 	}
 	if err != nil {
-		glog.Errorf("Error parsing config. %v", err)
-		os.Exit(1)
+		return err
+	}
+	uid, err := os.Hostname()
+	if err != nil {
+		return err
 	}
 	stop := make(chan struct{})
-	s, err := scheduler.NewIPClaimScheduler(config, *mask)
+	c, err := claimcontroller.NewClaimController(iface, uid, config)
 	if err != nil {
-		glog.Errorf("Crashed during scheduler initialization: %v", err)
-		os.Exit(2)
+		return err
 	}
-	err = extensions.EnsureThirdPartyResourcesExist(s.Clientset)
+	err = extensions.EnsureThirdPartyResourcesExist(c.Clientset)
 	if err != nil {
-		glog.Errorf("Crashed while initializing third party resources: %v", err)
-		os.Exit(2)
+
+		return err
 	}
-	s.Run(stop)
+	c.Run(stop)
+	return nil
 }

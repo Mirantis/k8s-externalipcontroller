@@ -12,48 +12,58 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package app
 
 import (
-	"flag"
 	"os"
 
-	"github.com/Mirantis/k8s-externalipcontroller/pkg/claimcontroller"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/scheduler"
+
 	"github.com/golang/glog"
+	"github.com/spf13/cobra"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/clientcmd"
 )
 
-func main() {
-	iface := flag.String("iface", "eth0", "Link where ips will be assigned")
-	kubeconfig := flag.String("kubeconfig", "", "kubeconfig to use with kubernetes client")
-	flag.Parse()
+var mask string
+
+func init() {
+	Controller.Flags().StringVar(&mask, "mask", "32", "Default mask to use with external ips")
+	Root.AddCommand(Scheduler)
+}
+
+var Scheduler = &cobra.Command{
+	Use: "scheduler",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return InitScheduler()
+	},
+}
+
+func InitScheduler() error {
 	var err error
 	var config *rest.Config
-	if *kubeconfig != "" {
-		config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
+	if kubeconfig != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {
 		glog.Infof("kubeconfig is empty, assuming we are running in kubernetes cluster")
 		config, err = rest.InClusterConfig()
 	}
 	if err != nil {
-		glog.Errorf("Error parsing config: %v", err)
+		glog.Errorf("Error parsing config. %v", err)
 		os.Exit(1)
 	}
-	uid, err := os.Hostname()
-	if err != nil {
-		glog.Errorf("Error fetching hostname: %v", err)
-	}
 	stop := make(chan struct{})
-	c, err := claimcontroller.NewClaimController(*iface, uid, config)
+	s, err := scheduler.NewIPClaimScheduler(config, mask)
 	if err != nil {
-		glog.Errorf("Error creating claim controller: %v", err)
+		glog.Errorf("Crashed during scheduler initialization: %v", err)
+		os.Exit(2)
 	}
-	err = extensions.EnsureThirdPartyResourcesExist(c.Clientset)
+	err = extensions.EnsureThirdPartyResourcesExist(s.Clientset)
 	if err != nil {
 		glog.Errorf("Crashed while initializing third party resources: %v", err)
 		os.Exit(2)
 	}
-	c.Run(stop)
+	s.Run(stop)
+	return nil
 }
