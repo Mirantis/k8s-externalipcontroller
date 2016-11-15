@@ -40,6 +40,11 @@ type fakeIpClaims struct {
 	mock.Mock
 }
 
+func (f *fakeIpClaims) Get(name string) (*extensions.IpClaim, error) {
+	args := f.Called(name)
+	return args.Get(0).(*extensions.IpClaim), args.Error(1)
+}
+
 func (f *fakeIpClaims) Create(ipclaim *extensions.IpClaim) (*extensions.IpClaim, error) {
 	args := f.Called(ipclaim)
 	return ipclaim, args.Error(0)
@@ -70,7 +75,7 @@ type fakeIpNodes struct {
 
 func (f *fakeIpNodes) Create(ipnode *extensions.IpNode) (*extensions.IpNode, error) {
 	args := f.Called(ipnode)
-	return args.Get(0).(*extensions.IpNode), args.Error(1)
+	return ipnode, args.Error(0)
 }
 
 func (f *fakeIpNodes) List(opts api.ListOptions) (*extensions.IpNodeList, error) {

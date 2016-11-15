@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"k8s.io/client-go/1.5/kubernetes"
-	"k8s.io/client-go/1.5/pkg/api/errors"
 	"k8s.io/client-go/1.5/pkg/apis/extensions/v1beta1"
 )
 
@@ -33,8 +32,6 @@ func ensureThirdPartyResource(clientset *kubernetes.Clientset, name string) erro
 	_, err := clientset.Extensions().ThirdPartyResources().Get(name)
 	if err == nil {
 		return nil
-	} else if !errors.IsAlreadyExists(err) {
-		return err
 	}
 
 	resource := &v1beta1.ThirdPartyResource{

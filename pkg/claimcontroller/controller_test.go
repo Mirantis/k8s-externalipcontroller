@@ -17,13 +17,16 @@ package claimcontroller
 import (
 	"runtime"
 	"testing"
+	"time"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	fclient "github.com/Mirantis/k8s-externalipcontroller/pkg/extensions/testing"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
+	"k8s.io/client-go/1.5/pkg/api/errors"
+	"k8s.io/client-go/1.5/pkg/api/unversioned"
 	"k8s.io/client-go/1.5/pkg/api/v1"
 	fcache "k8s.io/client-go/1.5/tools/cache/testing"
 )
@@ -77,5 +80,31 @@ func TestClaimWatcher(t *testing.T) {
 	assert.Equal(t, len(fiphandler.Calls), 2, "Unexpect calls to iphandler")
 	assert.Equal(t, fiphandler.Calls[1].Arguments[0].(string), c.Iface, "Unexpected interface passed to netutils")
 	assert.Equal(t, fiphandler.Calls[1].Arguments[1].(string), claim.Spec.Cidr, "Unexpected cidr")
+}
 
+func TestHeartbeatIpNode(t *testing.T) {
+	ext := fclient.NewFakeExtClientset()
+	ticker := make(chan time.Time, 3)
+	for i := 0; i < 3; i++ {
+		ticker <- time.Time{}
+	}
+	stop := make(chan struct{})
+	c := claimController{
+		Uid:                 "first",
+		ExtensionsClientset: ext,
+	}
+	qualResource := unversioned.GroupResource{
+		Group:    "ipcontroller",
+		Resource: "ipnode",
+	}
+	ipnode := &extensions.IpNode{
+		ObjectMeta: v1.ObjectMeta{Name: c.Uid},
+	}
+	ext.Ipnodes.On("Get", c.Uid).Return(&extensions.IpNode{}, errors.NewNotFound(qualResource, c.Uid))
+	ext.Ipnodes.On("Create", mock.Anything).Return(nil)
+	ext.Ipnodes.On("Get", c.Uid).Return(ipnode, nil).Twice()
+	ext.Ipnodes.On("Update", mock.Anything).Return(nil).Twice()
+	go c.heartbeatIpNode(stop, ticker)
+	runtime.Gosched()
+	assert.Equal(t, len(ext.Ipnodes.Calls), 6, "Expected 4 calls")
 }

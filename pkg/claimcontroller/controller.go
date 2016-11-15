@@ -22,6 +22,8 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 
 	"github.com/golang/glog"
+	"k8s.io/client-go/1.5/pkg/api/errors"
+	"k8s.io/client-go/1.5/pkg/api/v1"
 	"k8s.io/client-go/1.5/tools/cache"
 )
 
@@ -115,6 +117,17 @@ func (c *claimController) heartbeatIpNode(stop chan struct{}, ticker <-chan time
 			return
 		case <-ticker:
 			ipnode, err := c.ExtensionsClientset.IPNodes().Get(c.Uid)
+			if errors.IsNotFound(err) {
+				ipnode := &extensions.IpNode{
+					ObjectMeta: v1.ObjectMeta{Name: c.Uid},
+				}
+				_, err := c.ExtensionsClientset.IPNodes().Create(ipnode)
+				if err != nil {
+					glog.Errorf("Error creating node %v : %v", c.Uid, err)
+					continue
+				}
+			}
+
 			if err != nil {
 				glog.Errorf("Error fetching node %v : %v", c.Uid, err)
 				continue

@@ -57,6 +57,7 @@ type WrappedClientset struct {
 
 type IPClaimsInterface interface {
 	Create(*IpClaim) (*IpClaim, error)
+	Get(name string) (*IpClaim, error)
 	List(api.ListOptions) (*IpClaimList, error)
 	Watch(api.ListOptions) (watch.Interface, error)
 	Update(*IpClaim) (*IpClaim, error)
@@ -145,6 +146,16 @@ func (c *IPNodesClient) Get(name string) (result *IpNode, err error) {
 	result = &IpNode{}
 	err = c.client.Get().
 		Resource("ipnodes").
+		Name(name).
+		Do().
+		Into(result)
+	return
+}
+
+func (c *IpClaimClient) Get(name string) (result *IpClaim, err error) {
+	result = &IpClaim{}
+	err = c.client.Get().
+		Resource("ipclaim").
 		Name(name).
 		Do().
 		Into(result)
