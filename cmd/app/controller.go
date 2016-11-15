@@ -25,15 +25,17 @@ import (
 	"k8s.io/client-go/1.5/tools/clientcmd"
 )
 
-var iface string
+var iface, hostname string
 
 func init() {
 	Controller.Flags().StringVar(&iface, "iface", "eth0", "Current interface will be used to assign ip addresses")
+	Controller.Flags().StringVar(&hostname, "hostname", "", "We will use os.Hostname if none provided")
 	Root.AddCommand(Controller)
 }
 
 var Controller = &cobra.Command{
-	Use: "controller",
+	Aliases: []string{"c"},
+	Use:     "claimcontroller",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return InitController()
 	},
@@ -50,7 +52,10 @@ func InitController() error {
 	if err != nil {
 		return err
 	}
-	uid, err := os.Hostname()
+	uid := hostname
+	if hostname == "" {
+		uid, err = os.Hostname()
+	}
 	if err != nil {
 		return err
 	}

@@ -34,7 +34,8 @@ func init() {
 }
 
 var Scheduler = &cobra.Command{
-	Use: "scheduler",
+	Aliases: []string{"s"},
+	Use:     "scheduler",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return InitScheduler()
 	},

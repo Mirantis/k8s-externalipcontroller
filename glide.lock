@@ -1,5 +1,5 @@
-hash: 824f2dedcf57dbc30f03da2be12182f59ce35195c9c5d0da18dcfa4ae69bdd60
-updated: 2016-11-15T13:16:45.079042998+02:00
+hash: 723db45d6bdf4bfa03d839259a2f56dd3a204aa432ddeafa210fceb3bfeef3fb
+updated: 2016-11-15T17:51:19.429017226+02:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -93,6 +93,8 @@ imports:
   version: 3ca23474a7c7203e0a0a070fd33508f6efdb9b3d
 - name: github.com/imdario/mergo
   version: 6633656539c1639d9d78127b7d47c622b5d7b6dc
+- name: github.com/inconshreveable/mousetrap
+  version: 76626ae9c91c4f2a10f34cad8ce83ea42c93bb75
 - name: github.com/jonboulle/clockwork
   version: 2eee05ed794112d45db504eb05aa693efd2b8b09
 - name: github.com/juju/ratelimit
@@ -377,6 +379,7 @@ imports:
   - pkg/util/clock
   - pkg/util/errors
   - pkg/util/exec
+  - pkg/util/flag
   - pkg/util/flowcontrol
   - pkg/util/framer
   - pkg/util/httpstream

@@ -15,6 +15,9 @@
 package extensions
 
 import (
+	"bytes"
+	"encoding/json"
+
 	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/unversioned"
@@ -89,26 +92,34 @@ type IpClaimClient struct {
 	client *rest.RESTClient
 }
 
+func decodeResponseInto(resp []byte, obj interface{}) error {
+	return json.NewDecoder(bytes.NewReader(resp)).Decode(obj)
+}
+
 func (c *IPNodesClient) Create(ipnode *IpNode) (result *IpNode, err error) {
 	result = &IpNode{}
-	err = c.client.Post().
+	resp, err := c.client.Post().
 		Namespace("default").
 		Resource("ipnodes").
 		Body(ipnode).
-		Do().
-		Into(result)
-	return
+		DoRaw()
+	if err != nil {
+		return result, err
+	}
+	return result, decodeResponseInto(resp, result)
 }
 
 func (c *IPNodesClient) List(opts api.ListOptions) (result *IpNodeList, err error) {
 	result = &IpNodeList{}
-	err = c.client.Get().
+	resp, err := c.client.Get().
 		Namespace("default").
 		Resource("ipnodes").
 		VersionedParams(&opts, api.ParameterCodec).
-		Do().
-		Into(result)
-	return
+		DoRaw()
+	if err != nil {
+		return result, err
+	}
+	return result, decodeResponseInto(resp, result)
 }
 
 func (c *IPNodesClient) Watch(opts api.ListOptions) (watch.Interface, error) {
@@ -122,14 +133,16 @@ func (c *IPNodesClient) Watch(opts api.ListOptions) (watch.Interface, error) {
 
 func (c *IPNodesClient) Update(ipnode *IpNode) (result *IpNode, err error) {
 	result = &IpNode{}
-	err = c.client.Put().
+	resp, err := c.client.Put().
 		Namespace("default").
 		Resource("ipnodes").
 		Name(ipnode.Name).
 		Body(ipnode).
-		Do().
-		Into(result)
-	return
+		DoRaw()
+	if err != nil {
+		return result, err
+	}
+	return result, decodeResponseInto(resp, result)
 }
 
 func (c *IPNodesClient) Delete(name string, options *api.DeleteOptions) error {
@@ -144,44 +157,54 @@ func (c *IPNodesClient) Delete(name string, options *api.DeleteOptions) error {
 
 func (c *IPNodesClient) Get(name string) (result *IpNode, err error) {
 	result = &IpNode{}
-	err = c.client.Get().
+	resp, err := c.client.Get().
+		Namespace("default").
 		Resource("ipnodes").
 		Name(name).
-		Do().
-		Into(result)
-	return
+		DoRaw()
+	if err != nil {
+		return result, err
+	}
+	return result, decodeResponseInto(resp, result)
 }
 
 func (c *IpClaimClient) Get(name string) (result *IpClaim, err error) {
 	result = &IpClaim{}
-	err = c.client.Get().
-		Resource("ipclaim").
+	resp, err := c.client.Get().
+		Namespace("default").
+		Resource("ipclaims").
 		Name(name).
-		Do().
-		Into(result)
-	return
+		DoRaw()
+	if err != nil {
+		return result, err
+	}
+	return result, decodeResponseInto(resp, result)
 }
 
 func (c *IpClaimClient) Create(ipclaim *IpClaim) (result *IpClaim, err error) {
 	result = &IpClaim{}
-	err = c.client.Post().
+	resp, err := c.client.Post().
 		Namespace("default").
-		Resource("ipclaim").
+		Resource("ipclaims").
 		Body(ipclaim).
-		Do().
-		Into(result)
-	return
+		DoRaw()
+	if err != nil {
+		return result, err
+	}
+	return result, decodeResponseInto(resp, result)
 }
 
 func (c *IpClaimClient) List(opts api.ListOptions) (result *IpClaimList, err error) {
 	result = &IpClaimList{}
-	err = c.client.Get().
+	resp, err := c.client.Get().
 		Namespace("default").
 		Resource("ipclaims").
 		VersionedParams(&opts, api.ParameterCodec).
-		Do().
-		Into(result)
-	return
+		DoRaw()
+	if err != nil {
+		return result, err
+	}
+	return result, decodeResponseInto(resp, result)
 }
 
 func (c *IpClaimClient) Watch(opts api.ListOptions) (watch.Interface, error) {
@@ -195,14 +218,16 @@ func (c *IpClaimClient) Watch(opts api.ListOptions) (watch.Interface, error) {
 
 func (c *IpClaimClient) Update(ipclaim *IpClaim) (result *IpClaim, err error) {
 	result = &IpClaim{}
-	err = c.client.Put().
+	resp, err := c.client.Put().
 		Namespace("default").
 		Resource("ipclaims").
 		Name(ipclaim.Name).
 		Body(ipclaim).
-		Do().
-		Into(result)
-	return
+		DoRaw()
+	if err != nil {
+		return result, err
+	}
+	return result, decodeResponseInto(resp, result)
 }
 
 func (c *IpClaimClient) Delete(name string, options *api.DeleteOptions) error {

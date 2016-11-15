@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	testutils "github.com/Mirantis/k8s-externalipcontroller/test/e2e/utils"
 
@@ -38,6 +39,7 @@ import (
 
 var _ = Describe("Basic", func() {
 	var clientset *kubernetes.Clientset
+	var ext extensions.ExtensionsClientset
 	var pods []*v1.Pod
 	var daemonSets []*v1beta1.DaemonSet
 	var ns *v1.Namespace
@@ -45,6 +47,8 @@ var _ = Describe("Basic", func() {
 	BeforeEach(func() {
 		var err error
 		clientset, err = testutils.KubeClient()
+		Expect(err).NotTo(HaveOccurred())
+		ext, err = extensions.WrapClientsetWithExtensions(clientset, testutils.LoadConfig())
 		Expect(err).NotTo(HaveOccurred())
 		namespaceObj := &v1.Namespace{
 			ObjectMeta: v1.ObjectMeta{
@@ -69,6 +73,16 @@ var _ = Describe("Basic", func() {
 			clientset.Extensions().DaemonSets(ds.Namespace).Delete(ds.Name, &api.DeleteOptions{})
 		}
 		clientset.Namespaces().Delete(ns.Name, &api.DeleteOptions{})
+		ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		for _, item := range ipnodes.Items {
+			ext.IPNodes().Delete(item.Name, &api.DeleteOptions{})
+		}
+		ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		for _, item := range ipclaims.Items {
+			ext.IPClaims().Delete(item.Name, &api.DeleteOptions{})
+		}
 	})
 
 	It("Service should be reachable using assigned external ips [pod-version]", func() {
@@ -76,7 +90,7 @@ var _ = Describe("Basic", func() {
 		// TODO make docker0 iface configurable
 		externalipcontroller := newPod(
 			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
-			[]string{"ipcontroller", "-logtostderr=true", "-v=10", "-iface=docker0", "-mask=24"}, nil, true, true)
+			[]string{"ipmanager", "n", "--logtostderr=true", "--v=10", "--iface=docker0", "--mask=24"}, nil, true, true)
 		pod, err := clientset.Pods(ns.Name).Create(externalipcontroller)
 		pods = append(pods, pod)
 		Expect(err).Should(BeNil())
@@ -96,8 +110,7 @@ var _ = Describe("Basic", func() {
 	})
 
 	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [ds-version]", func() {
-		Skip("fair manager will be removed")
-		processName := "ipcontroller"
+		processName := "ipmanager"
 		By("deploying etcd pod and service")
 		etcdName := "etcd"
 		var etcdPort int32 = 4001
@@ -107,8 +120,8 @@ var _ = Describe("Basic", func() {
 		By("deploying externalipcontroller daemon set")
 		dsLabels := map[string]string{"app": "ipcontroller"}
 		// sh -c will be PID and we will be able to stop our process
-		cmd := []string{processName, "-logtostderr=true", "-v=10",
-			"-iface=docker0", "-mask=24", "-ipmanager=fair", etcdFlag}
+		cmd := []string{processName, "n", "--logtostderr=true", "--v=10",
+			"--iface=docker0", "--mask=24", "--ipmanager=fair", etcdFlag}
 		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
 			[]string{"sh", "-c", strings.Join(cmd, " ")}, dsLabels, true, true)
 		ds, err := clientset.Extensions().DaemonSets(ns.Name).Create(ds)
@@ -162,6 +175,33 @@ var _ = Describe("Basic", func() {
 				return fmt.Errorf("Unexpected IP %v", ips)
 			}
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
+	})
+
+	It("Scheduler will correctly handle creation/deletion of ipclaims based on externalips [Native]", func() {
+		By("deploying scheduler pod")
+		pod := newPod(
+			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{"ipmanager", "s", "--mask=24"}, nil, false, false)
+		_, err := clientset.Core().Pods(ns.Name).Create(pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("deploying mock service with couple of external ips")
+		svcPorts := []v1.ServicePort{{Protocol: v1.ProtocolTCP, Port: 9999, TargetPort: intstr.FromInt(9999)}}
+		svc := newService("any", map[string]string{}, svcPorts, []string{"10.10.0.2", "10.10.0.3"})
+		_, err = clientset.Core().Services(ns.Name).Create(svc)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying that ipclaim created for each external ip")
+		Eventually(func() error {
+			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+			if err != nil {
+				return err
+			}
+			if len(ipclaims.Items) != 2 {
+				return fmt.Errorf("Expected to see 2 ipclaims, instead %v", ipclaims.Items)
+			}
+			return nil
+		}, 30*time.Second, 2*time.Second).Should(BeNil())
 	})
 })
 

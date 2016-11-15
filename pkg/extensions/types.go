@@ -34,6 +34,9 @@ var (
 
 func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
+		&api.ListOptions{},
+		&api.DeleteOptions{},
+
 		&IpNode{},
 		&IpNodeList{},
 		&IpClaim{},
@@ -53,8 +56,6 @@ type IpNode struct {
 
 	// Standard object metadata
 	v1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
-
-	UpdateTimestamp unversioned.Time `json:"updateTimestamp,omitempty" protobuf:"bytes,8,opt,name=updateTimestamp"`
 }
 
 type IpNodeList struct {

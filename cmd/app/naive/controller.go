@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package naive
 
 import (
-	"flag"
 	"os"
 
 	"github.com/golang/glog"
+	"github.com/spf13/cobra"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/clientcmd"
 
@@ -27,45 +27,45 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 )
 
-type FlagArray []string
+var iface, mask, kubeconfig, ipmanagerType string
+var etcdEndpoints []string
 
-func (f *FlagArray) Set(v string) error {
-	*f = append(*f, v)
-	return nil
+func init() {
+	Naive.Flags().StringVar(&iface, "iface", "eth0", "Current interface will be used to assign ip addresses")
+	Naive.Flags().StringVar(&mask, "mask", "32", "mask part of the cidr")
+	Naive.Flags().StringVar(&kubeconfig, "kubeconfig", "", "kubeconfig to use with kubernetes client")
+	Naive.Flags().StringVar(&ipmanagerType, "ipmanager", "noop", "choose noop or fair")
+	Naive.Flags().StringSliceVar(&etcdEndpoints, "etcd", []string{}, "use to specify etcd endpoints")
 }
 
-func (f *FlagArray) String() string {
-	return "etcd"
+var Naive = &cobra.Command{
+	Aliases: []string{"n"},
+	Use:     "naivecontroller",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return InitNaiveController()
+	},
 }
 
-func main() {
-	iface := flag.String("iface", "eth0", "Link where ips will be assigned")
-	mask := flag.String("mask", "32", "mask part of the cidr")
-	kubeconfig := flag.String("kubeconfig", "", "kubeconfig to use with kubernetes client")
-	var etcdEndpoints FlagArray
-	flag.Var(&etcdEndpoints, "etcd", "use to specify etcd endpoints")
-	ipmanagerType := flag.String("ipmanager", "noop", "choose noop or fair")
-	flag.Parse()
-
-	glog.V(4).Infof("Starting external ip controller using link: %s and mask: /%s", *iface, *mask)
+func InitNaiveController() error {
+	glog.V(4).Infof("Starting external ip controller using link: %s and mask: /%s", iface, mask)
 	stopCh := make(chan struct{})
 	q := workqueue.NewQueue()
 
 	var err error
 	var config *rest.Config
-	if *kubeconfig != "" {
-		config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
+	if kubeconfig != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {
 		glog.Infof("kubeconfig is empty, assuming we are running in kubernetes cluster")
 		config, err = rest.InClusterConfig()
 	}
 	if err != nil {
 		glog.Errorf("Error parsing config. %v", err)
-		os.Exit(1)
+		return err
 	}
 
 	var manager ipmanager.Manager
-	switch *ipmanagerType {
+	switch ipmanagerType {
 	case "fair":
 		manager, err = ipmanager.NewFairEtcd(etcdEndpoints, stopCh, q)
 		if err != nil {
@@ -76,15 +76,13 @@ func main() {
 
 	host, err := os.Hostname()
 	if err != nil {
-		glog.Errorf("Failed to get hostname: %v", err)
-		os.Exit(1)
+		return err
 	}
 
-	c, err := externalip.NewExternalIpController(config, host, *iface, *mask, manager, q)
+	c, err := externalip.NewExternalIpController(config, host, iface, mask, manager, q)
 	if err != nil {
-		glog.Errorf("Controller crashed with %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	c.Run(stopCh)
-	os.Exit(0)
+	return nil
 }
