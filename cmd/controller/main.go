@@ -18,16 +18,15 @@ import (
 	"flag"
 	"os"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/claimcontroller"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
-	"github.com/Mirantis/k8s-externalipcontroller/pkg/scheduler"
-
 	"github.com/golang/glog"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/clientcmd"
 )
 
 func main() {
-	mask := flag.String("mask", "32", "mask part of the cidr")
+	iface := flag.String("iface", "eth0", "Link where ips will be assigned")
 	kubeconfig := flag.String("kubeconfig", "", "kubeconfig to use with kubernetes client")
 	flag.Parse()
 	var err error
@@ -39,19 +38,22 @@ func main() {
 		config, err = rest.InClusterConfig()
 	}
 	if err != nil {
-		glog.Errorf("Error parsing config. %v", err)
+		glog.Errorf("Error parsing config: %v", err)
 		os.Exit(1)
 	}
-	stop := make(chan struct{})
-	s, err := scheduler.NewIPClaimScheduler(config, *mask)
+	uid, err := os.Hostname()
 	if err != nil {
-		glog.Errorf("Crashed during scheduler initialization: %v", err)
-		os.Exit(2)
+		glog.Errorf("Error fetching hostname: %v", err)
 	}
-	err = extensions.EnsureThirdPartyResourcesExist(s.Clientset)
+	stop := make(chan struct{})
+	c, err := claimcontroller.NewClaimController(*iface, uid, config)
+	if err != nil {
+		glog.Errorf("Error creating claim controller: %v", err)
+	}
+	err = extensions.EnsureThirdPartyResourcesExist(c.Clientset)
 	if err != nil {
 		glog.Errorf("Crashed while initializing third party resources: %v", err)
 		os.Exit(2)
 	}
-	s.Run(stop)
+	c.Run(stop)
 }

@@ -22,12 +22,48 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 
 	"github.com/golang/glog"
+	"k8s.io/client-go/1.5/kubernetes"
+	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/errors"
 	"k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/pkg/runtime"
+	"k8s.io/client-go/1.5/pkg/watch"
+	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/cache"
 )
 
+func NewClaimController(iface, uid string, config *rest.Config) (*claimController, error) {
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	ext, err := extensions.WrapClientsetWithExtensions(clientset, config)
+	if err != nil {
+		return nil, err
+	}
+	claimSource := &cache.ListWatch{
+		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
+			return ext.IPClaims().List(options)
+		},
+		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			return ext.IPClaims().Watch(options)
+		},
+	}
+	queue := workqueue.NewQueue()
+	return &claimController{
+		Clientset:           clientset,
+		ExtensionsClientset: ext,
+		Iface:               iface,
+		Uid:                 uid,
+		claimSource:         claimSource,
+		queue:               queue,
+		iphandler:           netutils.LinuxIPHandler{},
+		heartbeatPeriod:     2 * time.Second,
+	}, nil
+}
+
 type claimController struct {
+	Clientset           *kubernetes.Clientset
 	ExtensionsClientset extensions.ExtensionsClientset
 	// i am not sure that it should be configurable for controller
 	Iface string

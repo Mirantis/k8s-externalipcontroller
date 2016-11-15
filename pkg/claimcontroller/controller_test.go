@@ -106,5 +106,5 @@ func TestHeartbeatIpNode(t *testing.T) {
 	ext.Ipnodes.On("Update", mock.Anything).Return(nil).Twice()
 	go c.heartbeatIpNode(stop, ticker)
 	runtime.Gosched()
-	assert.Equal(t, len(ext.Ipnodes.Calls), 6, "Expected 4 calls")
+	assert.Equal(t, len(ext.Ipnodes.Calls), 6, "Expected 6 calls")
 }
