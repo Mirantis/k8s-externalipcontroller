@@ -9,6 +9,8 @@ NUM_NODES=${NUM_NODES:-2}
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WORKDIRECTORY=${WORKDIRECTORY:-}
 
+K8S_ENDPOINT="http://localhost:4001"
+
 function fetch-kube {
         git clone https://github.com/kubernetes/kubernetes.git
         cd kubernetes/
@@ -27,6 +29,15 @@ function prepare-dind-cluster {
         done
 }
 
+function wait-kube {
+    local attempts=5
+    while [[ $attempts -gt 0 ]] && \
+            curl --connection-timeout 60 --silent --head \
+            "$K8S_ENDPOINT" > /dev/null; do
+        (( -- attempts ))
+    done
+}
+
 if [ -z "$WORKDIRECTORY" ]; then
         WORKDIRECTORY="$(mktemp -d -t ipcontrollerXXXX)"
 fi
@@ -34,4 +45,5 @@ cd ${WORKDIRECTORY}
 fetch-kube
 cd ${WORKDIRECTORY}/kubernetes
 prepare-dind-cluster
+wait-kube
 cd ${DIR}
