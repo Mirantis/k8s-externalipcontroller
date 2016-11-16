@@ -16,16 +16,14 @@ package e2e
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	testutils "github.com/Mirantis/k8s-externalipcontroller/test/e2e/utils"
-
-	"strings"
-
-	"net"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -76,12 +74,12 @@ var _ = Describe("Basic", func() {
 		ipnodes, err := ext.IPNodes().List(api.ListOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		for _, item := range ipnodes.Items {
-			ext.IPNodes().Delete(item.Name, &api.DeleteOptions{})
+			ext.IPNodes().Delete(item.Metadata.Name, &api.DeleteOptions{})
 		}
 		ipclaims, err := ext.IPClaims().List(api.ListOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		for _, item := range ipclaims.Items {
-			ext.IPClaims().Delete(item.Name, &api.DeleteOptions{})
+			ext.IPClaims().Delete(item.Metadata.Name, &api.DeleteOptions{})
 		}
 	})
 
@@ -146,7 +144,7 @@ var _ = Describe("Basic", func() {
 		Expect(len(dsPods)).To(BeNumerically(">", 1))
 		var totalCount int
 		for i := range dsPods {
-			managedIPs := getManagedIps(clientset, dsPods[i], network)
+			managedIPs := getManagedIps(clientset, dsPods[i], network, "docker0")
 			Expect(len(managedIPs)).To(BeNumerically("<=", len(externalIPs)))
 			totalCount += len(managedIPs)
 		}
@@ -158,7 +156,7 @@ var _ = Describe("Basic", func() {
 
 		By("verify that all ips are reassigned to another pod")
 		Eventually(func() error {
-			allIPs := getManagedIps(clientset, dsPods[1], network)
+			allIPs := getManagedIps(clientset, dsPods[1], network, "docker0")
 			if len(allIPs) != len(externalIPs) {
 				return fmt.Errorf("Not all IPs were reassigned to another pod: %v", allIPs)
 			}
@@ -169,7 +167,7 @@ var _ = Describe("Basic", func() {
 		rst = testutils.ExecInPod(clientset, dsPods[0], "pkill", "--echo", "-18", processName)
 		Expect(rst).NotTo(BeEmpty())
 		Eventually(func() error {
-			if ips := getManagedIps(clientset, dsPods[0], network); ips == nil {
+			if ips := getManagedIps(clientset, dsPods[0], network, "docker0"); ips == nil {
 				return nil
 			} else {
 				return fmt.Errorf("Unexpected IP %v", ips)
@@ -197,13 +195,43 @@ var _ = Describe("Basic", func() {
 			if err != nil {
 				return err
 			}
-			if len(ipclaims.Items) != 2 {
-				return fmt.Errorf("Expected to see 2 ipclaims, instead %v", ipclaims.Items)
+			if len(ipclaims.Items) >= 2 {
+				return fmt.Errorf("Expected to see atleast 2 ipclaims, instead %v", ipclaims.Items)
 			}
 			return nil
 		}, 30*time.Second, 2*time.Second).Should(BeNil())
 	})
 
+	It("Controller will add ips assigned by ipclaim [Native]", func() {
+		By("Deploying controller with custom hostname")
+		pod := newPod(
+			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{"ipmanager", "c", "--iface=eth0", "--hostname=test"}, nil, false, true)
+		pod, err := clientset.Core().Pods(ns.Name).Create(pod)
+		testutils.WaitForReady(clientset, pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("creating ipclaim assigned to host with name test")
+		ipclaim := &extensions.IpClaim{
+			Metadata: api.ObjectMeta{Name: "testclaim"},
+			Spec: extensions.IpClaimSpec{
+				Cidr:     "10.10.0.2/24",
+				NodeName: "test"},
+		}
+		_, err = ext.IPClaims().Create(ipclaim)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying that cidr provided in ip claim was assigned")
+		_, network, err := net.ParseCIDR("10.10.0.0/24")
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() error {
+			if ips := getManagedIps(clientset, *pod, network, "eth0"); len(ips) == 1 {
+				return nil
+			} else {
+				return fmt.Errorf("Unexpected IP count - %v", ips)
+			}
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+	})
 })
 
 func newPrivilegedPodSpec(containerName, imageName string, cmd []string, hostNetwork, privileged bool) v1.PodSpec {
@@ -332,8 +360,8 @@ func getPodsByLabels(clientset *kubernetes.Clientset, ns *v1.Namespace, podLabel
 	return pods.Items
 }
 
-func getManagedIps(clientset *kubernetes.Clientset, pod v1.Pod, network *net.IPNet) []net.IP {
-	rst := testutils.ExecInPod(clientset, pod, "ip", "a", "show", "dev", "docker0")
+func getManagedIps(clientset *kubernetes.Clientset, pod v1.Pod, network *net.IPNet, linkName string) []net.IP {
+	rst := testutils.ExecInPod(clientset, pod, "ip", "a", "show", "dev", linkName)
 	Expect(rst).NotTo(BeEmpty())
 	var managedIPs []net.IP
 	for _, line := range strings.Split(rst, "\n") {

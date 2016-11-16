@@ -46,10 +46,9 @@ func extensionClient(config *rest.Config) (*rest.RESTClient, error) {
 			Group:   GroupName,
 			Version: Version,
 		},
-		NegotiatedSerializer: api.Codecs,
+		NegotiatedSerializer: serializer.DirectCodecFactory{CodecFactory: api.Codecs},
+		ContentType:          runtime.ContentTypeJSON,
 	}
-	config.ContentType = runtime.ContentTypeJSON
-	config.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: api.Codecs}
 	return rest.RESTClientFor(config)
 }
 
@@ -140,7 +139,7 @@ func (c *IPNodesClient) Update(ipnode *IpNode) (result *IpNode, err error) {
 	resp, err := c.client.Put().
 		Namespace("default").
 		Resource("ipnodes").
-		Name(ipnode.Name).
+		Name(ipnode.Metadata.Name).
 		Body(ipnode).
 		DoRaw()
 	if err != nil {
@@ -174,15 +173,14 @@ func (c *IPNodesClient) Get(name string) (result *IpNode, err error) {
 
 func (c *IpClaimClient) Get(name string) (result *IpClaim, err error) {
 	result = &IpClaim{}
-	resp, err := c.client.Get().
+	err = c.client.Get().
 		Namespace("default").
 		Resource("ipclaims").
 		Name(name).
-		DoRaw()
-	if err != nil {
-		return result, err
-	}
-	return result, decodeResponseInto(resp, result)
+		Do().
+		Into(result)
+
+	return result, err
 }
 
 func (c *IpClaimClient) Create(ipclaim *IpClaim) (result *IpClaim, err error) {
@@ -225,7 +223,7 @@ func (c *IpClaimClient) Update(ipclaim *IpClaim) (result *IpClaim, err error) {
 	resp, err := c.client.Put().
 		Namespace("default").
 		Resource("ipclaims").
-		Name(ipclaim.Name).
+		Name(ipclaim.Metadata.Name).
 		Body(ipclaim).
 		DoRaw()
 	if err != nil {

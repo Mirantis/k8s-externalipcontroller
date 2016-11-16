@@ -22,12 +22,12 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	fclient "github.com/Mirantis/k8s-externalipcontroller/pkg/extensions/testing"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-
+	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/errors"
 	"k8s.io/client-go/1.5/pkg/api/unversioned"
-	"k8s.io/client-go/1.5/pkg/api/v1"
 	fcache "k8s.io/client-go/1.5/tools/cache/testing"
 )
 
@@ -64,8 +64,8 @@ func TestClaimWatcher(t *testing.T) {
 	go c.claimWatcher(stop)
 	go c.worker()
 	claim := &extensions.IpClaim{
-		ObjectMeta: v1.ObjectMeta{Name: "10.10.0.2-24"},
-		Spec:       extensions.IpClaimSpec{Cidr: "10.10.0.2/24", NodeName: "first"},
+		Metadata: api.ObjectMeta{Name: "10.10.0.2-24"},
+		Spec:     extensions.IpClaimSpec{Cidr: "10.10.0.2/24", NodeName: "first"},
 	}
 	fiphandler.On("Add", c.Iface, claim.Spec.Cidr).Return(nil)
 	lw.Add(claim)
@@ -98,7 +98,7 @@ func TestHeartbeatIpNode(t *testing.T) {
 		Resource: "ipnode",
 	}
 	ipnode := &extensions.IpNode{
-		ObjectMeta: v1.ObjectMeta{Name: c.Uid},
+		Metadata: api.ObjectMeta{Name: c.Uid},
 	}
 	ext.Ipnodes.On("Get", c.Uid).Return(&extensions.IpNode{}, errors.NewNotFound(qualResource, c.Uid))
 	ext.Ipnodes.On("Create", mock.Anything).Return(nil)

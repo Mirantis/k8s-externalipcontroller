@@ -15,6 +15,7 @@
 package claimcontroller
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
@@ -25,8 +26,8 @@ import (
 	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/errors"
-	"k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/pkg/fields"
+	"k8s.io/client-go/1.5/pkg/runtime"
+	"k8s.io/client-go/1.5/pkg/watch"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/cache"
 )
@@ -40,7 +41,14 @@ func NewClaimController(iface, uid string, config *rest.Config) (*claimControlle
 	if err != nil {
 		return nil, err
 	}
-	claimSource := cache.NewListWatchFromClient(ext.Client, "ipclaims", api.NamespaceAll, fields.Everything())
+	claimSource := &cache.ListWatch{
+		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
+			return ext.IPClaims().List(options)
+		},
+		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			return ext.IPClaims().Watch(options)
+		},
+	}
 	queue := workqueue.NewQueue()
 	return &claimController{
 		Clientset:           clientset,
@@ -87,6 +95,7 @@ func (c *claimController) claimWatcher(stop chan struct{}) {
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
+				fmt.Printf("Received ipclaim %v -- %v\n", claim.Metadata.Name, claim.Spec.NodeName)
 				if claim.Spec.NodeName != c.Uid {
 					return
 				}
@@ -121,6 +130,7 @@ func (c *claimController) worker() {
 		}
 		err := c.processClaim(item.(*extensions.IpClaim))
 		if err != nil {
+			glog.Errorf("Error processin claim %v", err)
 			c.queue.Add(item)
 		}
 		c.queue.Done(item)
@@ -147,13 +157,13 @@ func (c *claimController) heartbeatIpNode(stop chan struct{}, ticker <-chan time
 			ipnode, err := c.ExtensionsClientset.IPNodes().Get(c.Uid)
 			if errors.IsNotFound(err) {
 				ipnode := &extensions.IpNode{
-					ObjectMeta: v1.ObjectMeta{Name: c.Uid},
+					Metadata: api.ObjectMeta{Name: c.Uid},
 				}
 				_, err := c.ExtensionsClientset.IPNodes().Create(ipnode)
 				if err != nil {
 					glog.Errorf("Error creating node %v : %v", c.Uid, err)
-					continue
 				}
+				continue
 			}
 
 			if err != nil {

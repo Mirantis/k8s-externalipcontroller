@@ -18,8 +18,8 @@ import (
 	"encoding/json"
 
 	"k8s.io/client-go/1.5/pkg/api"
+	"k8s.io/client-go/1.5/pkg/api/meta"
 	"k8s.io/client-go/1.5/pkg/api/unversioned"
-	"k8s.io/client-go/1.5/pkg/api/v1"
 	"k8s.io/client-go/1.5/pkg/apimachinery/announced"
 	"k8s.io/client-go/1.5/pkg/runtime"
 )
@@ -67,7 +67,15 @@ type IpNode struct {
 	unversioned.TypeMeta `json:",inline"`
 
 	// Standard object metadata
-	v1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	Metadata api.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+}
+
+func (e *IpNode) GetObjectKind() unversioned.ObjectKind {
+	return &e.TypeMeta
+}
+
+func (e *IpNode) GetObjectMeta() meta.Object {
+	return &e.Metadata
 }
 
 type IpNodeList struct {
@@ -83,9 +91,17 @@ type IpClaim struct {
 	unversioned.TypeMeta `json:",inline"`
 
 	// Standard object metadata
-	v1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	Metadata api.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	Spec IpClaimSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+}
+
+func (e *IpClaim) GetObjectKind() unversioned.ObjectKind {
+	return &e.TypeMeta
+}
+
+func (e *IpClaim) GetObjectMeta() meta.Object {
+	return &e.Metadata
 }
 
 type IpClaimList struct {

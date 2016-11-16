@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
+
 	"github.com/golang/glog"
 	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api"
@@ -167,8 +168,8 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 					return
 				}
 				ipnode := ipnodes.Items[0]
-				claim.SetLabels(map[string]string{"ipnode": ipnode.Name})
-				claim.Spec.NodeName = ipnode.Name
+				claim.Metadata.SetLabels(map[string]string{"ipnode": ipnode.Metadata.Name})
+				claim.Spec.NodeName = ipnode.Metadata.Name
 				_, err = s.ExtensionsClientset.IPClaims().Update(claim)
 				if err != nil {
 					glog.Errorf("Claim update error %v %v", claim, err)
@@ -192,17 +193,18 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time
 			}
 
 			for _, ipnode := range ipnodes.Items {
-				generation := s.observedGeneration[ipnode.Name]
-				if generation < ipnode.Generation {
-					s.observedGeneration[ipnode.Name] = ipnode.Generation
+				name := ipnode.Metadata.Name
+				generation := s.observedGeneration[name]
+				if generation < ipnode.Metadata.Generation {
+					s.observedGeneration[name] = ipnode.Metadata.Generation
 					s.liveSync.Lock()
-					s.liveIpNodes[ipnode.Name] = struct{}{}
+					s.liveIpNodes[name] = struct{}{}
 					s.liveSync.Unlock()
 				} else {
 					s.liveSync.Lock()
-					delete(s.liveIpNodes, ipnode.Name)
+					delete(s.liveIpNodes, name)
 					s.liveSync.Unlock()
-					labelSelector := labels.Set(map[string]string{"ipnode": ipnode.Name})
+					labelSelector := labels.Set(map[string]string{"ipnode": name})
 					ipclaims, err := s.ExtensionsClientset.IPClaims().List(
 						api.ListOptions{
 							LabelSelector: labelSelector.AsSelector(),
@@ -215,7 +217,7 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time
 					for _, ipclaim := range ipclaims.Items {
 						// TODO don't update - send to queue for rescheduling instead
 						ipclaim.Spec.NodeName = ""
-						ipclaim.SetLabels(map[string]string{})
+						ipclaim.Metadata.SetLabels(map[string]string{})
 						_, err := s.ExtensionsClientset.IPClaims().Update(&ipclaim)
 						if err != nil {
 							glog.Errorf("Error during ipclaim update %v", err)
@@ -235,13 +237,12 @@ func (s *ipClaimScheduler) isLive(name string) bool {
 }
 
 func tryCreateIPClaim(ext extensions.ExtensionsClientset, ip, mask string) error {
-	// check how k8s stores keys in etcd
 	ipParts := strings.Split(ip, ".")
 	key := strings.Join([]string{strings.Join(ipParts, "-"), mask}, "-")
 	cidr := strings.Join([]string{ip, mask}, "/")
 	ipclaim := &extensions.IpClaim{
-		ObjectMeta: v1.ObjectMeta{Name: key},
-		Spec:       extensions.IpClaimSpec{Cidr: cidr}}
+		Metadata: api.ObjectMeta{Name: key},
+		Spec:     extensions.IpClaimSpec{Cidr: cidr}}
 	_, err := ext.IPClaims().Create(ipclaim)
 	if errors.IsAlreadyExists(err) {
 		return nil
