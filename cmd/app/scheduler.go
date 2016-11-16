@@ -29,7 +29,7 @@ import (
 var mask string
 
 func init() {
-	Controller.Flags().StringVar(&mask, "mask", "32", "Default mask to use with external ips")
+	Scheduler.Flags().StringVar(&mask, "mask", "32", "Default mask to use with external ips")
 	Root.AddCommand(Scheduler)
 }
 

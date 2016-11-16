@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/errors"
 	"k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/pkg/fields"
 	"k8s.io/client-go/1.5/pkg/labels"
 	"k8s.io/client-go/1.5/pkg/runtime"
 	"k8s.io/client-go/1.5/pkg/watch"
@@ -51,14 +52,7 @@ func NewIPClaimScheduler(config *rest.Config, mask string) (*ipClaimScheduler, e
 		},
 	}
 
-	claimSource := &cache.ListWatch{
-		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
-			return ext.IPClaims().List(options)
-		},
-		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
-			return ext.IPClaims().Watch(options)
-		},
-	}
+	claimSource := cache.NewListWatchFromClient(ext.Client, "ipclaims", api.NamespaceAll, fields.Everything())
 	return &ipClaimScheduler{
 		Config:              config,
 		Clientset:           clientset,
@@ -110,14 +104,20 @@ func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 			AddFunc: func(obj interface{}) {
 				svc := obj.(*v1.Service)
 				for _, ip := range svc.Spec.ExternalIPs {
-					tryCreateIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
+					err := tryCreateIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
+					if err != nil {
+						glog.Errorf("Unable to create ip claim %v", err)
+					}
 				}
 			},
 			UpdateFunc: func(old, cur interface{}) {
 				// handle old
 				curSvc := cur.(*v1.Service)
 				for _, ip := range curSvc.Spec.ExternalIPs {
-					tryCreateIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
+					err := tryCreateIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
+					if err != nil {
+						glog.Errorf("Unable to create ip claim %v", err)
+					}
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
@@ -171,7 +171,7 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 				claim.Spec.NodeName = ipnode.Name
 				_, err = s.ExtensionsClientset.IPClaims().Update(claim)
 				if err != nil {
-					glog.Errorf("Claim update error %v", err)
+					glog.Errorf("Claim update error %v %v", claim, err)
 				}
 			},
 		},
@@ -236,7 +236,8 @@ func (s *ipClaimScheduler) isLive(name string) bool {
 
 func tryCreateIPClaim(ext extensions.ExtensionsClientset, ip, mask string) error {
 	// check how k8s stores keys in etcd
-	key := strings.Join([]string{ip, mask}, "-")
+	ipParts := strings.Split(ip, ".")
+	key := strings.Join([]string{strings.Join(ipParts, "-"), mask}, "-")
 	cidr := strings.Join([]string{ip, mask}, "/")
 	ipclaim := &extensions.IpClaim{
 		ObjectMeta: v1.ObjectMeta{Name: key},
@@ -249,6 +250,7 @@ func tryCreateIPClaim(ext extensions.ExtensionsClientset, ip, mask string) error
 }
 
 func deleteIPClaim(ext extensions.ExtensionsClientset, ip, mask string) error {
-	key := strings.Join([]string{ip, mask}, "-")
+	ipParts := strings.Split(ip, ".")
+	key := strings.Join([]string{strings.Join(ipParts, "-"), mask}, "-")
 	return ext.IPClaims().Delete(key, &api.DeleteOptions{})
 }

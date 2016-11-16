@@ -15,9 +15,12 @@
 package extensions
 
 import (
+	"encoding/json"
+
 	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/unversioned"
 	"k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/pkg/apimachinery/announced"
 	"k8s.io/client-go/1.5/pkg/runtime"
 )
 
@@ -29,24 +32,33 @@ const (
 var (
 	SchemeGroupVersion = unversioned.GroupVersion{Group: GroupName, Version: Version}
 	SchemeBuilder      = runtime.NewSchemeBuilder(addKnownTypes)
-	AddToScheme        = SchemeBuilder.AddToScheme
 )
 
 func addKnownTypes(scheme *runtime.Scheme) error {
-	scheme.AddKnownTypes(SchemeGroupVersion,
-		&api.ListOptions{},
-		&api.DeleteOptions{},
-
+	scheme.AddKnownTypes(
+		SchemeGroupVersion,
 		&IpNode{},
 		&IpNodeList{},
 		&IpClaim{},
 		&IpClaimList{},
+
+		&api.ListOptions{},
+		&api.DeleteOptions{},
 	)
 	return nil
 }
 
 func init() {
-	if err := AddToScheme(api.Scheme); err != nil {
+	if err := announced.NewGroupMetaFactory(
+		&announced.GroupMetaFactoryArgs{
+			GroupName:                  GroupName,
+			VersionPreferenceOrder:     []string{SchemeGroupVersion.Version},
+			AddInternalObjectsToScheme: SchemeBuilder.AddToScheme,
+		},
+		announced.VersionToSchemeFunc{
+			SchemeGroupVersion.Version: SchemeBuilder.AddToScheme,
+		},
+	).Announce().RegisterAndEnable(); err != nil {
 		panic(err)
 	}
 }
@@ -73,8 +85,7 @@ type IpClaim struct {
 	// Standard object metadata
 	v1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
-	Spec       IpClaimSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
-	APIVersion string      `json:"apiVersion,omitempty" protobuf:"bytes,3,opt,name=apiVersion"`
+	Spec IpClaimSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 }
 
 type IpClaimList struct {
@@ -88,7 +99,57 @@ type IpClaimList struct {
 
 type IpClaimSpec struct {
 	// NodeName used to identify where IPClaim is assigned (IPNode.Name)
-	NodeName string `json:"nodeName,omitempty" protobuf:"bytes,10,opt,name=nodeName"`
+	NodeName string `json:"nodeName" protobuf:"bytes,10,opt,name=nodeName"`
 	Cidr     string `json:"cidr,omitempty" protobuf:"bytes,10,opt,name=cidr"`
 	Link     string `json:"link" protobuf:"bytes,10,opt,name=link"`
+}
+
+// see https://github.com/kubernetes/client-go/issues/8
+type ExampleIpNode IpNode
+type ExampleIpNodesList IpNodeList
+type ExampleIpClaim IpClaim
+type ExampleIpClaimList IpClaimList
+
+func (e *IpNode) UnmarshalJSON(data []byte) error {
+	tmp := ExampleIpNode{}
+	err := json.Unmarshal(data, &tmp)
+	if err != nil {
+		return err
+	}
+	tmp2 := IpNode(tmp)
+	*e = tmp2
+	return nil
+}
+
+func (el *IpNodeList) UnmarshalJSON(data []byte) error {
+	tmp := ExampleIpNodesList{}
+	err := json.Unmarshal(data, &tmp)
+	if err != nil {
+		return err
+	}
+	tmp2 := IpNodeList(tmp)
+	*el = tmp2
+	return nil
+}
+
+func (e *IpClaim) UnmarshalJSON(data []byte) error {
+	tmp := ExampleIpClaim{}
+	err := json.Unmarshal(data, &tmp)
+	if err != nil {
+		return err
+	}
+	tmp2 := IpClaim(tmp)
+	*e = tmp2
+	return nil
+}
+
+func (el *IpClaimList) UnmarshalJSON(data []byte) error {
+	tmp := ExampleIpClaimList{}
+	err := json.Unmarshal(data, &tmp)
+	if err != nil {
+		return err
+	}
+	tmp2 := IpClaimList(tmp)
+	*el = tmp2
+	return nil
 }

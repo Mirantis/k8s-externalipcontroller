@@ -191,7 +191,7 @@ var _ = Describe("Basic", func() {
 		_, err = clientset.Core().Services(ns.Name).Create(svc)
 		Expect(err).NotTo(HaveOccurred())
 
-		By("verifying that ipclaim created for each external ip")
+		By("verifying that ipclaims created for each external ip")
 		Eventually(func() error {
 			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
 			if err != nil {
@@ -203,6 +203,7 @@ var _ = Describe("Basic", func() {
 			return nil
 		}, 30*time.Second, 2*time.Second).Should(BeNil())
 	})
+
 })
 
 func newPrivilegedPodSpec(containerName, imageName string, cmd []string, hostNetwork, privileged bool) v1.PodSpec {

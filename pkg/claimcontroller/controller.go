@@ -26,8 +26,7 @@ import (
 	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/errors"
 	"k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/pkg/runtime"
-	"k8s.io/client-go/1.5/pkg/watch"
+	"k8s.io/client-go/1.5/pkg/fields"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/cache"
 )
@@ -41,14 +40,7 @@ func NewClaimController(iface, uid string, config *rest.Config) (*claimControlle
 	if err != nil {
 		return nil, err
 	}
-	claimSource := &cache.ListWatch{
-		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
-			return ext.IPClaims().List(options)
-		},
-		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
-			return ext.IPClaims().Watch(options)
-		},
-	}
+	claimSource := cache.NewListWatchFromClient(ext.Client, "ipclaims", api.NamespaceAll, fields.Everything())
 	queue := workqueue.NewQueue()
 	return &claimController{
 		Clientset:           clientset,

@@ -21,6 +21,8 @@ import (
 	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/unversioned"
+	"k8s.io/client-go/1.5/pkg/runtime"
+	"k8s.io/client-go/1.5/pkg/runtime/serializer"
 	"k8s.io/client-go/1.5/pkg/watch"
 	"k8s.io/client-go/1.5/rest"
 )
@@ -33,7 +35,7 @@ func WrapClientsetWithExtensions(clientset *kubernetes.Clientset, config *rest.C
 		return nil, err
 	}
 	return &WrappedClientset{
-		client: rest,
+		Client: rest,
 	}, nil
 }
 
@@ -46,6 +48,8 @@ func extensionClient(config *rest.Config) (*rest.RESTClient, error) {
 		},
 		NegotiatedSerializer: api.Codecs,
 	}
+	config.ContentType = runtime.ContentTypeJSON
+	config.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: api.Codecs}
 	return rest.RESTClientFor(config)
 }
 
@@ -55,7 +59,7 @@ type ExtensionsClientset interface {
 }
 
 type WrappedClientset struct {
-	client *rest.RESTClient
+	Client *rest.RESTClient
 }
 
 type IPClaimsInterface interface {
@@ -77,11 +81,11 @@ type IPNodesInterface interface {
 }
 
 func (w *WrappedClientset) IPNodes() IPNodesInterface {
-	return &IPNodesClient{w.client}
+	return &IPNodesClient{w.Client}
 }
 
 func (w *WrappedClientset) IPClaims() IPClaimsInterface {
-	return &IpClaimClient{w.client}
+	return &IpClaimClient{w.Client}
 }
 
 type IPNodesClient struct {
