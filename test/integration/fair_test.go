@@ -27,6 +27,7 @@ import (
 var _ = Describe("Fair [etcd]", func() {
 
 	It("Verifies that fair ip manager works correctly with etcd", func() {
+		Skip("fair manager will be removed in future")
 		stop1 := make(chan struct{})
 		stop2 := make(chan struct{})
 		queue1 := workqueue.NewQueue()

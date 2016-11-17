@@ -1,5 +1,5 @@
-hash: f3144502d0d0893be7229f77198fedb9425850b91b701c430743a0e165a0a486
-updated: 2016-11-09T12:52:37.06510461+02:00
+hash: db345383a0b91df62d3d090210111263dfdf97155c1a9516a14cbe3b9ec4dbba
+updated: 2016-11-17T16:08:33.088898972+02:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -106,7 +106,7 @@ imports:
 - name: github.com/mitchellh/go-wordwrap
   version: ad45545899c7b13c020ea92b2072220eefad42b8
 - name: github.com/onsi/ginkgo
-  version: 462326b1628e124b23f42e87a8f2750e3c4e2d24
+  version: 74c678d97c305753605c338c6c78c49ec104b5e7
   subpackages:
   - config
   - internal/codelocation

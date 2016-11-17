@@ -96,6 +96,7 @@ var _ = Describe("Basic", func() {
 	})
 
 	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [ds-version]", func() {
+		Skip("fair manager will be removed")
 		processName := "ipcontroller"
 		By("deploying etcd pod and service")
 		etcdName := "etcd"
