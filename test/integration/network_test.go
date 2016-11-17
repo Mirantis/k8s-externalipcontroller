@@ -126,6 +126,7 @@ var _ = Describe("Network [sudo]", func() {
 	})
 
 	It("Controller with fair ipmanager will split ips between instances evenly", func() {
+		Skip("fair manager  will be removed in future")
 		link1 := &netlink.Dummy{netlink.LinkAttrs{Name: linkNames[0]}}
 		link2 := &netlink.Dummy{netlink.LinkAttrs{Name: linkNames[1]}}
 		By("adding links for controllers")

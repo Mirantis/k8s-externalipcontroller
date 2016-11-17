@@ -11,7 +11,6 @@ import:
   - 1.5/rest
   - 1.5/tools/cache
 - package: github.com/onsi/ginkgo
-  version: v1.2.0
 - package: github.com/onsi/gomega
   version: v1.0
 - package: github.com/coreos/etcd
