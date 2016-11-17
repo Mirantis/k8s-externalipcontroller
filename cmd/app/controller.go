@@ -25,11 +25,7 @@ import (
 	"k8s.io/client-go/1.5/tools/clientcmd"
 )
 
-var iface, hostname string
-
 func init() {
-	Controller.Flags().StringVar(&iface, "iface", "eth0", "Current interface will be used to assign ip addresses")
-	Controller.Flags().StringVar(&hostname, "hostname", "", "We will use os.Hostname if none provided")
 	Root.AddCommand(Controller)
 }
 
@@ -44,6 +40,10 @@ var Controller = &cobra.Command{
 func InitController() error {
 	var err error
 	var config *rest.Config
+	kubeconfig := AppOpts.Kubeconfig
+	iface := AppOpts.Iface
+	hostname := AppOpts.Hostname
+
 	if kubeconfig != "" {
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {

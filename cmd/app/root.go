@@ -14,18 +14,7 @@
 
 package app
 
-import (
-	"github.com/Mirantis/k8s-externalipcontroller/cmd/app/naive"
-
-	"github.com/spf13/cobra"
-)
-
-var kubeconfig string
-
-func init() {
-	Root.PersistentFlags().StringVar(&kubeconfig, "kubeconfig", "", "Will be used for access to k8s api server")
-	Root.AddCommand(naive.Naive)
-}
+import "github.com/spf13/cobra"
 
 var Root = &cobra.Command{
 	Use:   "ipmanager",

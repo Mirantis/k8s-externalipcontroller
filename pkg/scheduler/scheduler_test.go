@@ -25,6 +25,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/v1"
 	fcache "k8s.io/client-go/1.5/tools/cache/testing"
 )
@@ -52,15 +53,15 @@ func TestServiceWatcher(t *testing.T) {
 	createCall := ext.Ipclaims.Calls[0]
 	ipclaim := createCall.Arguments[0].(*extensions.IpClaim)
 	assert.Equal(t, ipclaim.Spec.Cidr, "10.10.0.2/24", "Unexpected cidr assigned to node")
-	assert.Equal(t, ipclaim.Name, "10.10.0.2-24", "Unexpected name")
+	assert.Equal(t, ipclaim.Metadata.Name, "10-10-0-2-24", "Unexpected name")
 
-	ext.Ipclaims.On("Delete", "10.10.0.2-24", mock.Anything).Return(nil)
+	ext.Ipclaims.On("Delete", "10-10-0-2-24", mock.Anything).Return(nil)
 	lw.Delete(svc)
 	runtime.Gosched()
 	assert.Equal(t, len(ext.Ipclaims.Calls), 2, "Unexpected call count to ipclaims")
 	deleteCall := ext.Ipclaims.Calls[1]
 	ipclaimName := deleteCall.Arguments[0].(string)
-	assert.Equal(t, ipclaimName, "10.10.0.2-24", "Unexpected name")
+	assert.Equal(t, ipclaimName, "10-10-0-2-24", "Unexpected name")
 }
 
 func TestClaimWatcher(t *testing.T) {
@@ -74,14 +75,14 @@ func TestClaimWatcher(t *testing.T) {
 	go s.claimWatcher(stop)
 	defer close(stop)
 	claim := &extensions.IpClaim{
-		ObjectMeta: v1.ObjectMeta{Name: "10.10.0.2-24"},
-		Spec:       extensions.IpClaimSpec{Cidr: "10.10.0.2/24"},
+		Metadata: api.ObjectMeta{Name: "10.10.0.2-24"},
+		Spec:     extensions.IpClaimSpec{Cidr: "10.10.0.2/24"},
 	}
 	lw.Add(claim)
 	ipnodesList := &extensions.IpNodeList{
 		Items: []extensions.IpNode{
 			{
-				ObjectMeta: v1.ObjectMeta{Name: "first"},
+				Metadata: api.ObjectMeta{Name: "first"},
 			},
 		},
 	}
@@ -90,7 +91,7 @@ func TestClaimWatcher(t *testing.T) {
 	runtime.Gosched()
 	assert.Equal(t, len(ext.Ipclaims.Calls), 1, "Unexpected calls to ipclaims")
 	updatedClaim := ext.Ipclaims.Calls[0].Arguments[0].(*extensions.IpClaim)
-	assert.Equal(t, updatedClaim.Labels, map[string]string{"ipnode": "first"},
+	assert.Equal(t, updatedClaim.Metadata.Labels, map[string]string{"ipnode": "first"},
 		"Labels should be set to scheduled node")
 	assert.Equal(t, updatedClaim.Spec.NodeName, "first", "NodeName should be set to scheduled node")
 }
@@ -110,7 +111,7 @@ func TestMonitorIpNodes(t *testing.T) {
 	ipnodesList := &extensions.IpNodeList{
 		Items: []extensions.IpNode{
 			{
-				ObjectMeta: v1.ObjectMeta{
+				Metadata: api.ObjectMeta{
 					Name:       "first",
 					Generation: 666,
 				},
@@ -120,7 +121,7 @@ func TestMonitorIpNodes(t *testing.T) {
 	ipclaimsList := &extensions.IpClaimList{
 		Items: []extensions.IpClaim{
 			{
-				ObjectMeta: v1.ObjectMeta{
+				Metadata: api.ObjectMeta{
 					Name:   "10.10.0.1-24",
 					Labels: map[string]string{"ipnode": "first"},
 				},
@@ -130,7 +131,7 @@ func TestMonitorIpNodes(t *testing.T) {
 				},
 			},
 			{
-				ObjectMeta: v1.ObjectMeta{
+				Metadata: api.ObjectMeta{
 					Name:   "10.10.0.2-24",
 					Labels: map[string]string{"ipnode": "first"},
 				},
@@ -152,7 +153,7 @@ func TestMonitorIpNodes(t *testing.T) {
 	updateCalls := ext.Ipclaims.Calls[1:]
 	for _, call := range updateCalls {
 		ipclaim := call.Arguments[0].(*extensions.IpClaim)
-		assert.Equal(t, ipclaim.Labels, map[string]string{}, "monitor should clean all ipclaim labels")
+		assert.Equal(t, ipclaim.Metadata.Labels, map[string]string{}, "monitor should clean all ipclaim labels")
 		assert.Equal(t, ipclaim.Spec.NodeName, "", "monitor should clean node name")
 	}
 	assert.Equal(t, s.isLive("first"), false, "first node shouldn't be considered live")

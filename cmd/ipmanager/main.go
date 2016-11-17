@@ -18,9 +18,12 @@ import (
 	"log"
 
 	"github.com/Mirantis/k8s-externalipcontroller/cmd/app"
+
+	"k8s.io/kubernetes/pkg/util/flag"
 )
 
 func main() {
+	flag.InitFlags()
 	if err := app.Root.Execute(); err != nil {
 		log.Fatal(err)
 	}

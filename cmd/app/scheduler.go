@@ -26,10 +26,7 @@ import (
 	"k8s.io/client-go/1.5/tools/clientcmd"
 )
 
-var mask string
-
 func init() {
-	Scheduler.Flags().StringVar(&mask, "mask", "32", "Default mask to use with external ips")
 	Root.AddCommand(Scheduler)
 }
 
@@ -44,6 +41,10 @@ var Scheduler = &cobra.Command{
 func InitScheduler() error {
 	var err error
 	var config *rest.Config
+
+	kubeconfig := AppOpts.Kubeconfig
+	mask := AppOpts.Mask
+
 	if kubeconfig != "" {
 		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {

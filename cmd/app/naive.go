@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package naive
+package app
 
 import (
 	"os"
@@ -27,15 +27,8 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 )
 
-var iface, mask, kubeconfig, ipmanagerType string
-var etcdEndpoints []string
-
 func init() {
-	Naive.Flags().StringVar(&iface, "iface", "eth0", "Current interface will be used to assign ip addresses")
-	Naive.Flags().StringVar(&mask, "mask", "32", "mask part of the cidr")
-	Naive.Flags().StringVar(&kubeconfig, "kubeconfig", "", "kubeconfig to use with kubernetes client")
-	Naive.Flags().StringVar(&ipmanagerType, "ipmanager", "noop", "choose noop or fair")
-	Naive.Flags().StringSliceVar(&etcdEndpoints, "etcd", []string{}, "use to specify etcd endpoints")
+	Root.AddCommand(Naive)
 }
 
 var Naive = &cobra.Command{
@@ -47,6 +40,12 @@ var Naive = &cobra.Command{
 }
 
 func InitNaiveController() error {
+	kubeconfig := AppOpts.Kubeconfig
+	iface := AppOpts.Iface
+	mask := AppOpts.Mask
+	ipmanagerType := AppOpts.IPManagerType
+	etcdEndpoints := AppOpts.EtcdEndpoints
+
 	glog.V(4).Infof("Starting external ip controller using link: %s and mask: /%s", iface, mask)
 	stopCh := make(chan struct{})
 	q := workqueue.NewQueue()
