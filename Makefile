@@ -1,11 +1,22 @@
 IMAGE_REPO ?= mirantis/k8s-externalipcontroller
 IMAGE_TAG ?= latest
+DOCKER_BUILD ?= no
 
 BUILD_DIR = _output
-GOLANG_IMAGE = golang:1.7
+ROOT_DIR = $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 ENV_PREPARE_MARKER = .env-prepare.complete
 BUILD_IMAGE_MARKER = .build-image.complete
+
+ifeq ( $(DOCKER_BUILD), yes )
+	DOCKER_EXEC =
+else
+	_DOCKER_GOPATH = /gopath
+	_DOCKER_WORKDIR = $(_DOCKER_GOPATH)/src/github.com/Mirantis/k8s-externalipcontroller/
+	_DOCKER_IMAGE  = golang:1.7
+	DOCKER_EXEC = docker run --rm -it -v "$(ROOT_DIR):$(_DOCKER_WORKDIR)" \
+		-e "GOPATH=$(_DOCKER_GOPATH)" -w "$(_DOCKER_WORKDIR)" $(_DOCKER_IMAGE)
+endif
 
 .PHONY: help
 help:
@@ -32,13 +43,18 @@ get-deps:
 build: $(BUILD_DIR)/ipcontroller
 
 
+.PHONY: containerized-build
+containerized-build:
+	make build DOCKER_BUILD=yees
+
+
 .PHONY: build-image
 build-image: $(BUILD_IMAGE_MARKER)
 
 
 .PHONY: unit
 unit:
-	go test -v ./pkg/...
+	$(DOCKER_EXEC) go test -v ./pkg/...
 
 
 .PHONY: integration
@@ -65,15 +81,15 @@ $(BUILD_DIR):
 
 
 $(BUILD_DIR)/ipcontroller: $(BUILD_DIR)
-	go build -o $@ cmd/ipcontroller.go
+	$(DOCKER_EXEC) go build -o $@ cmd/ipcontroller.go
 
 
 $(BUILD_DIR)/e2e.test:
-	go test -c -o $@ ./test/e2e/
+	$(DOCKER_EXEC) go test -c -o $@ ./test/e2e/
 
 
 $(BUILD_DIR)/integration.test: $(BUILD_DIR)
-	go test -c -o $@ ./test/integration/
+	$(DOCKER_EXEC) go test -c -o $@ ./test/integration/
 
 
 $(BUILD_IMAGE_MARKER): $(BUILD_DIR)/ipcontroller
