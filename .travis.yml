@@ -8,3 +8,6 @@ before_install:
 install:
   - make get-deps
 script: make test
+after_success:
+  - docker login -e="$DOCKER_EMAIL" -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" quay.io
+  - docker push quay.io/l23network/k8s-externalipcontroller
