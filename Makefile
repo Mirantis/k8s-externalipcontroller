@@ -25,7 +25,7 @@ help:
 	@echo "Targets:"
 	@echo "help            - Print this message and exit"
 	@echo "get-deps        - Install project dependencies"
-	@echo "build           - Build ipcontroller binary"
+	@echo "build           - Build ipmanager binary"
 	@echo "build-image     - Build docker image"
 	@echo "test            - Run all tests"
 	@echo "unit            - Run unit tests"
@@ -40,12 +40,12 @@ get-deps:
 
 
 .PHONY: build
-build: $(BUILD_DIR)/ipcontroller
+build: $(BUILD_DIR)/ipmanager
 
 
 .PHONY: containerized-build
 containerized-build:
-	make build DOCKER_BUILD=yees
+	make build DOCKER_BUILD=yes
 
 
 .PHONY: build-image
@@ -80,8 +80,8 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 
-$(BUILD_DIR)/ipcontroller: $(BUILD_DIR)
-	$(DOCKER_EXEC) go build -o $@ cmd/ipcontroller.go
+$(BUILD_DIR)/ipmanager: $(BUILD_DIR)
+	$(DOCKER_EXEC) go build -o $@ ./cmd/ipmanager/
 
 
 $(BUILD_DIR)/e2e.test:
@@ -92,7 +92,7 @@ $(BUILD_DIR)/integration.test: $(BUILD_DIR)
 	$(DOCKER_EXEC) go test -c -o $@ ./test/integration/
 
 
-$(BUILD_IMAGE_MARKER): $(BUILD_DIR)/ipcontroller
+$(BUILD_IMAGE_MARKER): $(BUILD_DIR)/ipmanager
 	docker build -t $(IMAGE_REPO):$(IMAGE_TAG) .
 	echo > $(BUILD_IMAGE_MARKER)
 
