@@ -12,7 +12,7 @@ function build-image {
         echo "Building docker image ${IMAGE_REPO}:${IMAGE_TAG}"
         set -o xtrace
         directory=/gopath/src/github.com/Mirantis/k8s-externalipcontroller/
-        docker run --rm -it -v "$(pwd)":$directory -e "GOPATH=/gopath" -w $directory golang:1.7 go build -o _output/ipcontroller cmd/ipcontroller.go
+        docker run --rm -it -v "$(pwd)":$directory -e "GOPATH=/gopath" -w $directory golang:1.7 go build -o _output/ipmanager ./cmd/ipmanager/
         docker build -t ${IMAGE_REPO}:${IMAGE_TAG} .
         set +o xtrace
         echo "Built docker image ${IMAGE_REPO}:${IMAGE_TAG}"
@@ -39,7 +39,7 @@ function run-tests {
         echo "Running e2e tests"
         set -o xtrace
         go test -c -o _output/e2e.test ./test/e2e/
-        sudo ./_output/e2e.test --master=http://localhost:8888 --testlink=docker0 -ginkgo.v
+        sudo ./_output/e2e.test --master=localhost:8888 --testlink=docker0 -ginkgo.v
         set +o xtrace
 }
 

@@ -27,3 +27,5 @@ import:
   version: v1.6.0-alpha.0
   subpackages:
   - pkg/client/unversioned/remotecommand
+  - pkg/util/flag
+- package: github.com/spf13/cobra

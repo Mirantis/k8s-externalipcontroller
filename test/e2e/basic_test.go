@@ -16,15 +16,14 @@ package e2e
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	testutils "github.com/Mirantis/k8s-externalipcontroller/test/e2e/utils"
-
-	"strings"
-
-	"net"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -76,7 +75,7 @@ var _ = Describe("Basic", func() {
 		// TODO make docker0 iface configurable
 		externalipcontroller := newPod(
 			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
-			[]string{"ipcontroller", "-logtostderr=true", "-v=10", "-iface=docker0", "-mask=24"}, nil, true, true)
+			[]string{"ipmanager", "n", "--logtostderr=true", "--v=10", "--iface=docker0", "--mask=24"}, nil, true, true)
 		pod, err := clientset.Pods(ns.Name).Create(externalipcontroller)
 		pods = append(pods, pod)
 		Expect(err).Should(BeNil())
@@ -97,7 +96,7 @@ var _ = Describe("Basic", func() {
 
 	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [ds-version]", func() {
 		Skip("fair manager will be removed")
-		processName := "ipcontroller"
+		processName := "ipmanager"
 		By("deploying etcd pod and service")
 		etcdName := "etcd"
 		var etcdPort int32 = 4001
@@ -107,8 +106,8 @@ var _ = Describe("Basic", func() {
 		By("deploying externalipcontroller daemon set")
 		dsLabels := map[string]string{"app": "ipcontroller"}
 		// sh -c will be PID and we will be able to stop our process
-		cmd := []string{processName, "-logtostderr=true", "-v=10",
-			"-iface=docker0", "-mask=24", "-ipmanager=fair", etcdFlag}
+		cmd := []string{processName, "n", "--logtostderr=true", "--v=10",
+			"--iface=docker0", "--mask=24", "--ipmanager=fair", etcdFlag}
 		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
 			[]string{"sh", "-c", strings.Join(cmd, " ")}, dsLabels, true, true)
 		ds, err := clientset.Extensions().DaemonSets(ns.Name).Create(ds)
@@ -133,7 +132,7 @@ var _ = Describe("Basic", func() {
 		Expect(len(dsPods)).To(BeNumerically(">", 1))
 		var totalCount int
 		for i := range dsPods {
-			managedIPs := getManagedIps(clientset, dsPods[i], network)
+			managedIPs := getManagedIps(clientset, dsPods[i], network, "docker0")
 			Expect(len(managedIPs)).To(BeNumerically("<=", len(externalIPs)))
 			totalCount += len(managedIPs)
 		}
@@ -145,7 +144,7 @@ var _ = Describe("Basic", func() {
 
 		By("verify that all ips are reassigned to another pod")
 		Eventually(func() error {
-			allIPs := getManagedIps(clientset, dsPods[1], network)
+			allIPs := getManagedIps(clientset, dsPods[1], network, "docker0")
 			if len(allIPs) != len(externalIPs) {
 				return fmt.Errorf("Not all IPs were reassigned to another pod: %v", allIPs)
 			}
@@ -156,10 +155,117 @@ var _ = Describe("Basic", func() {
 		rst = testutils.ExecInPod(clientset, dsPods[0], "pkill", "--echo", "-18", processName)
 		Expect(rst).NotTo(BeEmpty())
 		Eventually(func() error {
-			if ips := getManagedIps(clientset, dsPods[0], network); ips == nil {
+			if ips := getManagedIps(clientset, dsPods[0], network, "docker0"); ips == nil {
 				return nil
 			} else {
 				return fmt.Errorf("Unexpected IP %v", ips)
+			}
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+	})
+})
+
+var _ = Describe("Third party objects", func() {
+	var clientset *kubernetes.Clientset
+	var ext extensions.ExtensionsClientset
+	var daemonSets []*v1beta1.DaemonSet
+	var ns *v1.Namespace
+
+	BeforeEach(func() {
+		var err error
+		clientset, err = testutils.KubeClient()
+		Expect(err).NotTo(HaveOccurred())
+		ext, err = extensions.WrapClientsetWithExtensions(clientset, testutils.LoadConfig())
+		Expect(err).NotTo(HaveOccurred())
+		namespaceObj := &v1.Namespace{
+			ObjectMeta: v1.ObjectMeta{
+				GenerateName: "e2e-tests-ipcontroller-",
+				Namespace:    "",
+			},
+			Status: v1.NamespaceStatus{},
+		}
+		ns, err = clientset.Namespaces().Create(namespaceObj)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	AfterEach(func() {
+		podList, _ := clientset.Core().Pods(ns.Name).List(api.ListOptions{LabelSelector: labels.Everything()})
+		if CurrentGinkgoTestDescription().Failed {
+			testutils.DumpLogs(clientset, podList.Items...)
+		}
+		for _, pod := range podList.Items {
+			clientset.Core().Pods(pod.Namespace).Delete(pod.Name, &api.DeleteOptions{})
+		}
+		for _, ds := range daemonSets {
+			clientset.Extensions().DaemonSets(ds.Namespace).Delete(ds.Name, &api.DeleteOptions{})
+		}
+		clientset.Namespaces().Delete(ns.Name, &api.DeleteOptions{})
+		ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		for _, item := range ipnodes.Items {
+			ext.IPNodes().Delete(item.Metadata.Name, &api.DeleteOptions{})
+		}
+		ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		for _, item := range ipclaims.Items {
+			ext.IPClaims().Delete(item.Metadata.Name, &api.DeleteOptions{})
+		}
+	})
+
+	It("Scheduler will correctly handle creation/deletion of ipclaims based on externalips [Native]", func() {
+		By("deploying scheduler pod")
+		pod := newPod(
+			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{"ipmanager", "s", "--mask=24", "--logtostderr", "--v=10"}, nil, false, false)
+		_, err := clientset.Core().Pods(ns.Name).Create(pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("deploying mock service with couple of external ips")
+		svcPorts := []v1.ServicePort{{Protocol: v1.ProtocolTCP, Port: 9999, TargetPort: intstr.FromInt(9999)}}
+		svc := newService("any", map[string]string{}, svcPorts, []string{"10.10.0.2", "10.10.0.3"})
+		_, err = clientset.Core().Services(ns.Name).Create(svc)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying that ipclaims created for each external ip")
+		Eventually(func() error {
+			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+			if err != nil {
+				return err
+			}
+			if len(ipclaims.Items) >= 2 {
+				return fmt.Errorf("Expected to see atleast 2 ipclaims, instead %v", ipclaims.Items)
+			}
+			return nil
+		}, 30*time.Second, 2*time.Second).Should(BeNil())
+	})
+
+	It("Controller will add ips assigned by ipclaim [Native]", func() {
+		By("Deploying controller with custom hostname")
+		pod := newPod(
+			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{"ipmanager", "c", "--iface=eth0", "--hostname=test", "--logtostderr", "--v=10"},
+			nil, false, true)
+		pod, err := clientset.Core().Pods(ns.Name).Create(pod)
+		testutils.WaitForReady(clientset, pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("creating ipclaim assigned to host with name test")
+		ipclaim := &extensions.IpClaim{
+			Metadata: api.ObjectMeta{Name: "testclaim"},
+			Spec: extensions.IpClaimSpec{
+				Cidr:     "10.10.0.2/24",
+				NodeName: "test"},
+		}
+		_, err = ext.IPClaims().Create(ipclaim)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying that cidr provided in ip claim was assigned")
+		_, network, err := net.ParseCIDR("10.10.0.0/24")
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() error {
+			if ips := getManagedIps(clientset, *pod, network, "eth0"); len(ips) == 1 {
+				return nil
+			} else {
+				return fmt.Errorf("Unexpected IP count - %v", ips)
 			}
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 	})
@@ -291,8 +397,8 @@ func getPodsByLabels(clientset *kubernetes.Clientset, ns *v1.Namespace, podLabel
 	return pods.Items
 }
 
-func getManagedIps(clientset *kubernetes.Clientset, pod v1.Pod, network *net.IPNet) []net.IP {
-	rst := testutils.ExecInPod(clientset, pod, "ip", "a", "show", "dev", "docker0")
+func getManagedIps(clientset *kubernetes.Clientset, pod v1.Pod, network *net.IPNet, linkName string) []net.IP {
+	rst := testutils.ExecInPod(clientset, pod, "ip", "a", "show", "dev", linkName)
 	Expect(rst).NotTo(BeEmpty())
 	var managedIPs []net.IP
 	for _, line := range strings.Split(rst, "\n") {
