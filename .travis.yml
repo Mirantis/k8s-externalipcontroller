@@ -9,5 +9,11 @@ install:
   - make get-deps
 script: make test
 after_success:
-  - docker login -e="$DOCKER_EMAIL" -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" quay.io
-  - docker push quay.io/l23network/k8s-externalipcontroller
+  - docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" quay.io
+  - if [ "$TRAVIS_BRANCH" == "master" ]; then
+        docker tag mirantis/k8s-externalipcontroller quay.io/l23network/k8s-externalipcontroller:latest;
+        docker push quay.io/l23network/k8s-externalipcontroller:latest;
+    else
+        docker tag mirantis/k8s-externalipcontroller quay.io/l23network/k8s-externalipcontroller:$TRAVIS_BRANCH;
+        docker push quay.io/l23network/k8s-externalipcontroller:$TRAVIS_BRANCH;
+    fi
