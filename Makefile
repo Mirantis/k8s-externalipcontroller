@@ -89,7 +89,9 @@ $(BUILD_DIR):
 
 
 $(BUILD_DIR)/ipmanager: $(BUILD_DIR) $(VENDOR_DIR)
-	$(DOCKER_EXEC) go build -o $@ ./cmd/ipmanager/
+	$(DOCKER_EXEC) bash -xc 'go build --ldflags "-extldflags \"-static\"" \
+		-o $@ ./cmd/ipmanager/ ; \
+		chown $(shell id -u):$(shell id -u) -R _output'
 
 
 $(BUILD_DIR)/e2e.test: $(BUILD_DIR) $(VENDOR_DIR)
