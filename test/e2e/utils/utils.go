@@ -95,7 +95,7 @@ func dumpLogs(clientset *kubernetes.Clientset, pod v1.Pod) {
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) string {
+func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) (string, string, error) {
 	Logf("Running %v in %v\n", cmd, pod.Name)
 
 	container := pod.Spec.Containers[0].Name
@@ -118,9 +118,8 @@ func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) strin
 	}, api.ParameterCodec)
 	err := execute("POST", req.URL(), config, nil, &stdout, &stderr, false)
 	Logf("Error %v: %v\n", cmd, stderr.String())
-	Expect(err).NotTo(HaveOccurred())
 	Logf("Output %v: %v\n", cmd, stdout.String())
-	return strings.TrimSpace(stdout.String())
+	return strings.TrimSpace(stdout.String()), strings.TrimSpace(stderr.String()), err
 }
 
 func execute(method string, url *url.URL, config *rest.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool) error {

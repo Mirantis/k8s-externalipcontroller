@@ -38,8 +38,10 @@ import (
 var _ = Describe("Basic", func() {
 	var clientset *kubernetes.Clientset
 	var pods []*v1.Pod
-	var daemonSets []*v1beta1.DaemonSet
 	var ns *v1.Namespace
+	var addrToClear []string
+	var ipcontrollerName = "externalipcontroller"
+	var linkToUse = "docker0"
 
 	BeforeEach(func() {
 		var err error
@@ -57,15 +59,17 @@ var _ = Describe("Basic", func() {
 	})
 
 	AfterEach(func() {
+		ipcontroller, err := clientset.Core().Pods(ns.Name).Get(ipcontrollerName)
+		if err != nil {
+			ensureAddrRemoved(clientset, *ipcontroller, linkToUse, addrToClear)
+		}
+
 		podList, _ := clientset.Core().Pods(ns.Name).List(api.ListOptions{LabelSelector: labels.Everything()})
 		if CurrentGinkgoTestDescription().Failed {
 			testutils.DumpLogs(clientset, podList.Items...)
 		}
 		for _, pod := range podList.Items {
 			clientset.Core().Pods(pod.Namespace).Delete(pod.Name, &api.DeleteOptions{})
-		}
-		for _, ds := range daemonSets {
-			clientset.Extensions().DaemonSets(ds.Namespace).Delete(ds.Name, &api.DeleteOptions{})
 		}
 		clientset.Namespaces().Delete(ns.Name, &api.DeleteOptions{})
 	})
@@ -75,7 +79,7 @@ var _ = Describe("Basic", func() {
 		// TODO make docker0 iface configurable
 		externalipcontroller := newPod(
 			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
-			[]string{"ipmanager", "n", "--logtostderr=true", "--v=10", "--iface=docker0", "--mask=24"}, nil, true, true)
+			[]string{"ipmanager", "n", "--logtostderr=true", "--v=10", "--iface=" + linkToUse, "--mask=24"}, nil, true, true)
 		pod, err := clientset.Pods(ns.Name).Create(externalipcontroller)
 		pods = append(pods, pod)
 		Expect(err).Should(BeNil())
@@ -83,6 +87,7 @@ var _ = Describe("Basic", func() {
 
 		By("deploying nginx pod application and service with extnernal ips")
 		externalIPs := []string{"10.108.10.3"}
+		addrToClear = append(addrToClear, externalIPs...)
 		nginxName := "nginx"
 		var nginxPort int32 = 2288
 		deployNginxPodAndService(nginxName, nginxPort, clientset, ns, externalIPs)
@@ -93,75 +98,6 @@ var _ = Describe("Basic", func() {
 		By("veryfiying that service is reachable using external ip")
 		verifyServiceReachable(nginxPort, externalIPs...)
 	})
-
-	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [ds-version]", func() {
-		Skip("fair manager will be removed")
-		processName := "ipmanager"
-		By("deploying etcd pod and service")
-		etcdName := "etcd"
-		var etcdPort int32 = 4001
-		etcdClusterIP := deployEtcdPodAndService(etcdName, etcdPort, clientset, ns)
-		etcdFlag := fmt.Sprintf("-etcd=http://%s:%d", etcdClusterIP, etcdPort)
-
-		By("deploying externalipcontroller daemon set")
-		dsLabels := map[string]string{"app": "ipcontroller"}
-		// sh -c will be PID and we will be able to stop our process
-		cmd := []string{processName, "n", "--logtostderr=true", "--v=10",
-			"--iface=docker0", "--mask=24", "--ipmanager=fair", etcdFlag}
-		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
-			[]string{"sh", "-c", strings.Join(cmd, " ")}, dsLabels, true, true)
-		ds, err := clientset.Extensions().DaemonSets(ns.Name).Create(ds)
-		Expect(err).NotTo(HaveOccurred())
-
-		By("deploying nginx pod and service with multiple external ips")
-		nginxName := "nginx"
-		var nginxPort int32 = 2288
-		_, network, err := net.ParseCIDR("10.107.10.0/24")
-		Expect(err).NotTo(HaveOccurred())
-		externalIPs := []string{"10.107.10.3", "10.107.10.4", "10.107.10.5"}
-		deployNginxPodAndService(nginxName, nginxPort, clientset, ns, externalIPs)
-
-		By("assigning ip from external ip pool to a node where test is running")
-		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.107.10.10/24")).Should(BeNil())
-
-		By("verifying that nginx service reachable using any externalIP")
-		verifyServiceReachable(nginxPort, externalIPs...)
-
-		By("verifying that ips are distributed among all daemon set pods")
-		dsPods := getPodsByLabels(clientset, ns, dsLabels)
-		Expect(len(dsPods)).To(BeNumerically(">", 1))
-		var totalCount int
-		for i := range dsPods {
-			managedIPs := getManagedIps(clientset, dsPods[i], network, "docker0")
-			Expect(len(managedIPs)).To(BeNumerically("<=", len(externalIPs)))
-			totalCount += len(managedIPs)
-		}
-		Expect(totalCount).To(BeNumerically("==", len(externalIPs)))
-
-		By("making one of the controllers unreachable and verifying that all ips are rescheduled on the other pods")
-		rst := testutils.ExecInPod(clientset, dsPods[0], "pkill", "--echo", "-19", processName)
-		Expect(rst).NotTo(BeEmpty())
-
-		By("verify that all ips are reassigned to another pod")
-		Eventually(func() error {
-			allIPs := getManagedIps(clientset, dsPods[1], network, "docker0")
-			if len(allIPs) != len(externalIPs) {
-				return fmt.Errorf("Not all IPs were reassigned to another pod: %v", allIPs)
-			}
-			return nil
-		}, 30*time.Second, 1*time.Second).Should(BeNil())
-
-		By("bring back controller and verify that ips are purged")
-		rst = testutils.ExecInPod(clientset, dsPods[0], "pkill", "--echo", "-18", processName)
-		Expect(rst).NotTo(BeEmpty())
-		Eventually(func() error {
-			if ips := getManagedIps(clientset, dsPods[0], network, "docker0"); ips == nil {
-				return nil
-			} else {
-				return fmt.Errorf("Unexpected IP %v", ips)
-			}
-		}, 30*time.Second, 1*time.Second).Should(BeNil())
-	})
 })
 
 var _ = Describe("Third party objects", func() {
@@ -169,6 +105,9 @@ var _ = Describe("Third party objects", func() {
 	var ext extensions.ExtensionsClientset
 	var daemonSets []*v1beta1.DaemonSet
 	var ns *v1.Namespace
+	var addrToClear []string
+	var ipcontrollerLabels = map[string]string{"app": "ipcontroller"}
+	var linkToUse = "docker0"
 
 	BeforeEach(func() {
 		var err error
@@ -188,6 +127,16 @@ var _ = Describe("Third party objects", func() {
 	})
 
 	AfterEach(func() {
+		selector := labels.Set(ipcontrollerLabels).AsSelector()
+		ipcontrollerPods, err := clientset.Core().Pods(ns.Name).List(
+			api.ListOptions{LabelSelector: selector},
+		)
+		if err != nil {
+			for _, pod := range ipcontrollerPods.Items {
+				ensureAddrRemoved(clientset, pod, linkToUse, addrToClear)
+			}
+		}
+
 		podList, _ := clientset.Core().Pods(ns.Name).List(api.ListOptions{LabelSelector: labels.Everything()})
 		if CurrentGinkgoTestDescription().Failed {
 			testutils.DumpLogs(clientset, podList.Items...)
@@ -266,6 +215,88 @@ var _ = Describe("Third party objects", func() {
 				return nil
 			} else {
 				return fmt.Errorf("Unexpected IP count - %v", ips)
+			}
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+	})
+
+	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [Native]", func() {
+		processName := "ipmanager"
+		By("deploying claim scheduler pod")
+		pod := newPod(
+			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{processName, "s", "--mask=24", "--logtostderr", "--v=5"}, nil, false, false)
+		_, err := clientset.Core().Pods(ns.Name).Create(pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("deploying claim controller daemon set")
+		// sh -c will be PID 1 and we will be able to stop our process
+		cmd := []string{processName, "c", "--logtostderr", "--v=5", "--iface=docker0"}
+		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{"sh", "-c", strings.Join(cmd, " ")}, ipcontrollerLabels, true, true)
+		ds, err = clientset.Extensions().DaemonSets(ns.Name).Create(ds)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("waiting until both nodes will be registered")
+		Eventually(func() error {
+			ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+			if err != nil {
+				return err
+			}
+			if len(ipnodes.Items) != 2 {
+				return fmt.Errorf("Unexpected nodes length %v", ipnodes.Items)
+			}
+			return nil
+		}, time.Second*30, 2*time.Second).Should(BeNil())
+
+		By("deploying nginx pod and service with multiple external ips")
+		nginxName := "nginx"
+		var nginxPort int32 = 2288
+		_, network, err := net.ParseCIDR("10.107.10.0/24")
+		Expect(err).NotTo(HaveOccurred())
+		externalIPs := []string{"10.107.10.2", "10.107.10.3", "10.107.10.4", "10.107.10.5"}
+		addrToClear = append(addrToClear, externalIPs...)
+		deployNginxPodAndService(nginxName, nginxPort, clientset, ns, externalIPs)
+
+		By("assigning ip from external ip pool to a node where test is running")
+		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.107.10.10/24")).Should(BeNil())
+
+		By("verifying that nginx service reachable using any externalIP")
+		verifyServiceReachable(nginxPort, externalIPs...)
+
+		By("verifying that ips are distributed among all daemon set pods")
+		dsPods := getPodsByLabels(clientset, ns, ipcontrollerLabels)
+		Expect(len(dsPods)).To(BeNumerically(">", 1))
+		var totalCount int
+		for i := range dsPods {
+			managedIPs := getManagedIps(clientset, dsPods[i], network, "docker0")
+			Expect(len(managedIPs)).To(BeNumerically("<=", len(externalIPs)))
+			totalCount += len(managedIPs)
+		}
+		Expect(totalCount).To(BeNumerically("==", len(externalIPs)))
+
+		By("making one of the controllers unreachable and verifying that all ips are rescheduled onto the other pod")
+		rst, _, err := testutils.ExecInPod(clientset, dsPods[0], "pkill", "--echo", "-19", processName)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rst).NotTo(BeEmpty())
+
+		By("verify that all ips are reassigned to another pod")
+		Eventually(func() error {
+			allIPs := getManagedIps(clientset, dsPods[1], network, "docker0")
+			if len(allIPs) != len(externalIPs) {
+				return fmt.Errorf("Not all IPs were reassigned to another pod: %v", allIPs)
+			}
+			return nil
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+
+		By("bring back controller and verify that ips are purged")
+		rst, _, err = testutils.ExecInPod(clientset, dsPods[0], "pkill", "--echo", "-18", processName)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rst).NotTo(BeEmpty())
+		Eventually(func() error {
+			if ips := getManagedIps(clientset, dsPods[0], network, "docker0"); ips == nil {
+				return nil
+			} else {
+				return fmt.Errorf("Unexpected IP %v", ips)
 			}
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 	})
@@ -398,7 +429,8 @@ func getPodsByLabels(clientset *kubernetes.Clientset, ns *v1.Namespace, podLabel
 }
 
 func getManagedIps(clientset *kubernetes.Clientset, pod v1.Pod, network *net.IPNet, linkName string) []net.IP {
-	rst := testutils.ExecInPod(clientset, pod, "ip", "a", "show", "dev", linkName)
+	rst, _, err := testutils.ExecInPod(clientset, pod, "ip", "a", "show", "dev", linkName)
+	Expect(err).NotTo(HaveOccurred())
 	Expect(rst).NotTo(BeEmpty())
 	var managedIPs []net.IP
 	for _, line := range strings.Split(rst, "\n") {
@@ -413,4 +445,12 @@ func getManagedIps(clientset *kubernetes.Clientset, pod v1.Pod, network *net.IPN
 		}
 	}
 	return managedIPs
+}
+
+func ensureAddrRemoved(clientset *kubernetes.Clientset, pod v1.Pod, link string, addrToClear []string) {
+	testutils.Logf("Removing addrs %v from link %v for pod %v\n", addrToClear, link, pod)
+	for _, addr := range addrToClear {
+		// ignore all errors
+		testutils.ExecInPod(clientset, pod, "ip", "a", "del", "dev", link, addr)
+	}
 }
