@@ -29,8 +29,9 @@ func EnsureThirdPartyResourcesExist(clientset *kubernetes.Clientset) error {
 }
 
 func ensureThirdPartyResource(clientset *kubernetes.Clientset, name string) error {
-	res, _ := clientset.Extensions().ThirdPartyResources().Get(name)
-	if res != nil {
+	fullName := strings.Join([]string{name, GroupName}, ".")
+	_, err := clientset.Extensions().ThirdPartyResources().Get(fullName)
+	if err == nil {
 		return nil
 	}
 
@@ -38,7 +39,7 @@ func ensureThirdPartyResource(clientset *kubernetes.Clientset, name string) erro
 		Versions: []v1beta1.APIVersion{
 			{Name: Version},
 		}}
-	resource.SetName(strings.Join([]string{name, GroupName}, "."))
-	_, err := clientset.Extensions().ThirdPartyResources().Create(resource)
+	resource.SetName(fullName)
+	_, err = clientset.Extensions().ThirdPartyResources().Create(resource)
 	return err
 }

@@ -15,7 +15,6 @@
 package claimcontroller
 
 import (
-	"runtime"
 	"testing"
 	"time"
 
@@ -23,6 +22,7 @@ import (
 	fclient "github.com/Mirantis/k8s-externalipcontroller/pkg/extensions/testing"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"k8s.io/client-go/1.5/pkg/api"
@@ -69,15 +69,17 @@ func TestClaimWatcher(t *testing.T) {
 	}
 	fiphandler.On("Add", c.Iface, claim.Spec.Cidr).Return(nil)
 	lw.Add(claim)
-	runtime.Gosched()
-	assert.Equal(t, len(fiphandler.Calls), 1, "Unexpect calls to iphandler")
+	utils.EventualCondition(t, time.Second*1, func() bool {
+		return assert.ObjectsAreEqual(1, len(fiphandler.Calls))
+	}, "Unexpect calls to iphandler", fiphandler.Calls)
 	assert.Equal(t, fiphandler.Calls[0].Arguments[0].(string), c.Iface, "Unexpected interface passed to netutils")
 	assert.Equal(t, fiphandler.Calls[0].Arguments[1].(string), claim.Spec.Cidr, "Unexpected cidr")
 
 	lw.Delete(claim)
 	fiphandler.On("Del", c.Iface, claim.Spec.Cidr).Return(nil)
-	runtime.Gosched()
-	assert.Equal(t, len(fiphandler.Calls), 2, "Unexpect calls to iphandler")
+	utils.EventualCondition(t, time.Second*1, func() bool {
+		return assert.ObjectsAreEqual(2, len(fiphandler.Calls))
+	}, "Unexpect calls to iphandler", fiphandler.Calls)
 	assert.Equal(t, fiphandler.Calls[1].Arguments[0].(string), c.Iface, "Unexpected interface passed to netutils")
 	assert.Equal(t, fiphandler.Calls[1].Arguments[1].(string), claim.Spec.Cidr, "Unexpected cidr")
 }
@@ -105,6 +107,7 @@ func TestHeartbeatIpNode(t *testing.T) {
 	ext.Ipnodes.On("Get", c.Uid).Return(ipnode, nil).Twice()
 	ext.Ipnodes.On("Update", mock.Anything).Return(nil).Twice()
 	go c.heartbeatIpNode(stop, ticker)
-	runtime.Gosched()
-	assert.Equal(t, len(ext.Ipnodes.Calls), 6, "Expected 6 calls")
+	utils.EventualCondition(t, time.Second*1, func() bool {
+		return assert.ObjectsAreEqual(6, len(ext.Ipnodes.Calls))
+	}, "Unexpect calls to iphandler", ext.Ipnodes.Calls)
 }

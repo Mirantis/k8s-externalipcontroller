@@ -18,11 +18,10 @@ import (
 	"testing"
 	"time"
 
-	"runtime"
-
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	fclient "github.com/Mirantis/k8s-externalipcontroller/pkg/extensions/testing"
 
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"k8s.io/client-go/1.5/pkg/api"
@@ -48,8 +47,9 @@ func TestServiceWatcher(t *testing.T) {
 		Spec:       v1.ServiceSpec{ExternalIPs: []string{"10.10.0.2"}}}
 	lw.Add(svc)
 	// let controller to process all services
-	runtime.Gosched()
-	assert.Equal(t, len(ext.Ipclaims.Calls), 1, "Unexpected call count to ipclaims")
+	utils.EventualCondition(t, time.Second*1, func() bool {
+		return assert.ObjectsAreEqual(len(ext.Ipclaims.Calls), 1)
+	}, "Unexpected call count to ipclaims", ext.Ipclaims.Calls)
 	createCall := ext.Ipclaims.Calls[0]
 	ipclaim := createCall.Arguments[0].(*extensions.IpClaim)
 	assert.Equal(t, ipclaim.Spec.Cidr, "10.10.0.2/24", "Unexpected cidr assigned to node")
@@ -57,8 +57,9 @@ func TestServiceWatcher(t *testing.T) {
 
 	ext.Ipclaims.On("Delete", "10-10-0-2-24", mock.Anything).Return(nil)
 	lw.Delete(svc)
-	runtime.Gosched()
-	assert.Equal(t, len(ext.Ipclaims.Calls), 2, "Unexpected call count to ipclaims")
+	utils.EventualCondition(t, time.Second*1, func() bool {
+		return assert.ObjectsAreEqual(len(ext.Ipclaims.Calls), 2)
+	}, "Unexpected call count to ipclaims", ext.Ipclaims.Calls)
 	deleteCall := ext.Ipclaims.Calls[1]
 	ipclaimName := deleteCall.Arguments[0].(string)
 	assert.Equal(t, ipclaimName, "10-10-0-2-24", "Unexpected name")
@@ -88,8 +89,9 @@ func TestClaimWatcher(t *testing.T) {
 	}
 	ext.Ipnodes.On("List", mock.Anything).Return(ipnodesList, nil)
 	ext.Ipclaims.On("Update", mock.Anything).Return(nil)
-	runtime.Gosched()
-	assert.Equal(t, len(ext.Ipclaims.Calls), 1, "Unexpected calls to ipclaims")
+	utils.EventualCondition(t, time.Second*1, func() bool {
+		return assert.ObjectsAreEqual(len(ext.Ipclaims.Calls), 1)
+	}, "Unexpected call count to ipclaims", ext.Ipclaims.Calls)
 	updatedClaim := ext.Ipclaims.Calls[0].Arguments[0].(*extensions.IpClaim)
 	assert.Equal(t, updatedClaim.Metadata.Labels, map[string]string{"ipnode": "first"},
 		"Labels should be set to scheduled node")
@@ -147,9 +149,12 @@ func TestMonitorIpNodes(t *testing.T) {
 	ext.Ipclaims.On("Update", mock.Anything).Return(nil).Twice()
 	go s.monitorIPNodes(stop, ticker)
 	defer close(stop)
-	runtime.Gosched()
-	assert.Equal(t, 2, len(ext.Ipnodes.Calls), "Unexpected calls to ipnodes")
-	assert.Equal(t, 3, len(ext.Ipclaims.Calls), "Unexpected calls to ipclaims")
+	utils.EventualCondition(t, time.Second*1, func() bool {
+		return assert.ObjectsAreEqual(len(ext.Ipnodes.Calls), 2)
+	}, "Unexpected call count to ipnodes", ext.Ipnodes.Calls)
+	utils.EventualCondition(t, time.Second*1, func() bool {
+		return assert.ObjectsAreEqual(len(ext.Ipclaims.Calls), 3)
+	}, "Unexpected call count to ipclaims", ext.Ipclaims.Calls)
 	updateCalls := ext.Ipclaims.Calls[1:]
 	for _, call := range updateCalls {
 		ipclaim := call.Arguments[0].(*extensions.IpClaim)
