@@ -225,7 +225,7 @@ func verifyAddrs(link netlink.Link, expectedIps map[string]bool) {
 			return fmt.Errorf("Assigned ips %v are not equal to expected %v.", resultIps, expectedIps)
 		}
 		return nil
-	}, 10*time.Second, 1*time.Second).Should(BeNil())
+	}, 20*time.Second, 1*time.Second).Should(BeNil())
 }
 
 func ensureLinksRemoved(links ...string) {

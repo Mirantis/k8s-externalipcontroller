@@ -31,14 +31,10 @@ help:
 	@echo "unit            - Run unit tests"
 	@echo "integration     - Run integration tests"
 	@echo "e2e             - Run e2e tests"
-
-
 .PHONY: get-deps
 get-deps:
 	go get github.com/Masterminds/glide
 	glide install --strip-vendor
-
-
 .PHONY: build
 build: $(BUILD_DIR)/ipmanager
 
@@ -59,7 +55,7 @@ unit:
 
 .PHONY: integration
 integration: $(BUILD_DIR)/integration.test $(ENV_PREPARE_MARKER)
-	sudo $(BUILD_DIR)/integration.test
+	sudo $(BUILD_DIR)/integration.test --ginkgo.v --logtostderr --v=10
 
 
 .PHONY: e2e
