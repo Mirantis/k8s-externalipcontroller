@@ -72,6 +72,7 @@ func TestClaimWatcher(t *testing.T) {
 	s := ipClaimScheduler{
 		claimSource:         lw,
 		ExtensionsClientset: ext,
+		liveIpNodes:         make(map[string]struct{}),
 	}
 	go s.claimWatcher(stop)
 	defer close(stop)
@@ -87,6 +88,11 @@ func TestClaimWatcher(t *testing.T) {
 			},
 		},
 	}
+	s.liveSync.Lock()
+	for _, node := range ipnodesList.Items {
+		s.liveIpNodes[node.Metadata.Name] = struct{}{}
+	}
+	s.liveSync.Unlock()
 	ext.Ipnodes.On("List", mock.Anything).Return(ipnodesList, nil)
 	ext.Ipclaims.On("Update", mock.Anything).Return(nil)
 	utils.EventualCondition(t, time.Second*1, func() bool {
@@ -114,9 +120,9 @@ func TestMonitorIpNodes(t *testing.T) {
 		Items: []extensions.IpNode{
 			{
 				Metadata: api.ObjectMeta{
-					Name:       "first",
-					Generation: 666,
+					Name: "first",
 				},
+				Revision: 555,
 			},
 		},
 	}

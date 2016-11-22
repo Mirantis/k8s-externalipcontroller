@@ -15,7 +15,6 @@
 package claimcontroller
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
@@ -95,7 +94,7 @@ func (c *claimController) claimWatcher(stop chan struct{}) {
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
-				fmt.Printf("Received ipclaim %v -- %v\n", claim.Metadata.Name, claim.Spec.NodeName)
+				glog.V(3).Infof("Received add event for ipclaim %v - %v", claim.Metadata.Name, claim.Spec.NodeName)
 				if claim.Spec.NodeName != c.Uid {
 					return
 				}
@@ -104,6 +103,9 @@ func (c *claimController) claimWatcher(stop chan struct{}) {
 			UpdateFunc: func(old, cur interface{}) {
 				oldClaim := old.(*extensions.IpClaim)
 				curClaim := cur.(*extensions.IpClaim)
+				glog.V(3).Infof("Received update event. Old ipclaim %v - %v, New ipclaim %v - %v",
+					oldClaim.Metadata.Name, oldClaim.Spec.NodeName,
+					curClaim.Metadata.Name, curClaim.Spec.NodeName)
 				if oldClaim.Spec.NodeName != c.Uid && curClaim.Spec.NodeName != c.Uid {
 					return
 				}
@@ -170,6 +172,9 @@ func (c *claimController) heartbeatIpNode(stop chan struct{}, ticker <-chan time
 				glog.Errorf("Error fetching node %v : %v", c.Uid, err)
 				continue
 			}
+			glog.V(3).Infof("Updating ipnode %v. Version %v.",
+				ipnode.Metadata.Name, ipnode.Revision)
+			ipnode.Revision++
 			_, err = c.ExtensionsClientset.IPNodes().Update(ipnode)
 			if err != nil {
 				glog.Errorf("Error updating node %v : %v", c.Uid, err)

@@ -105,6 +105,7 @@ func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 			AddFunc: func(obj interface{}) {
 				svc := obj.(*v1.Service)
 				for _, ip := range svc.Spec.ExternalIPs {
+					glog.V(3).Infof("Trying to create ipclaim with IP %v and MASK %v", ip, s.DefaultMask)
 					err := tryCreateIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
 					if err != nil {
 						glog.Errorf("Unable to create ip claim %v", err)
@@ -154,31 +155,60 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
-				if claim.Spec.NodeName != "" {
-					return
-				}
-				ipnodes, err := s.ExtensionsClientset.IPNodes().List(api.ListOptions{})
-				if err != nil {
-					glog.Errorf("Can't get ip-nodes list %v", err)
-					return
-				}
-				// this needs to be queued and requeud in case of node absence
-				if len(ipnodes.Items) == 0 {
-					glog.Errorf("No available ip-nodes to schedule claim")
-					return
-				}
-				ipnode := ipnodes.Items[0]
-				claim.Metadata.SetLabels(map[string]string{"ipnode": ipnode.Metadata.Name})
-				claim.Spec.NodeName = ipnode.Metadata.Name
-				_, err = s.ExtensionsClientset.IPClaims().Update(claim)
-				if err != nil {
-					glog.Errorf("Claim update error %v %v", claim, err)
-				}
+				glog.V(3).Infof("Ipclaim created %v", claim.Metadata.Name)
+				s.processIpClaim(claim)
+			},
+			UpdateFunc: func(_, cur interface{}) {
+				claim := cur.(*extensions.IpClaim)
+				glog.V(3).Infof("Ipclaim updated %v", claim.Metadata.Name)
+				s.processIpClaim(claim)
 			},
 		},
 	)
 	s.claimStore = store
 	controller.Run(stop)
+}
+
+func (s *ipClaimScheduler) findAliveNodes(ipnodes []extensions.IpNode) (result []*extensions.IpNode) {
+	s.liveSync.Lock()
+	s.liveSync.Unlock()
+	for i := range ipnodes {
+		node := ipnodes[i]
+		if _, ok := s.liveIpNodes[node.Metadata.Name]; ok {
+			result = append(result, &node)
+		}
+	}
+	return result
+}
+
+func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) {
+	if claim.Spec.NodeName != "" {
+		return
+	}
+	ipnodes, err := s.ExtensionsClientset.IPNodes().List(api.ListOptions{})
+	if err != nil {
+		glog.Errorf("Can't get ip-nodes list %v", err)
+		return
+	}
+	// this needs to be queued and requeud in case of node absence
+	if len(ipnodes.Items) == 0 {
+		glog.Errorf("No available ip-nodes to schedule claim")
+		return
+	}
+	liveNodes := s.findAliveNodes(ipnodes.Items)
+	if len(liveNodes) == 0 {
+		glog.Errorf("No live nodes")
+		return
+	}
+	ipnode := liveNodes[0]
+	claim.Metadata.SetLabels(map[string]string{"ipnode": ipnode.Metadata.Name})
+	claim.Spec.NodeName = ipnode.Metadata.Name
+	glog.V(3).Infof("Scheduling claim %v on a node %v",
+		claim.Metadata.Name, claim.Spec.NodeName)
+	_, err = s.ExtensionsClientset.IPClaims().Update(claim)
+	if err != nil {
+		glog.Errorf("Claim update error %v %v", claim, err)
+	}
 }
 
 func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time.Time) {
@@ -194,14 +224,19 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time
 
 			for _, ipnode := range ipnodes.Items {
 				name := ipnode.Metadata.Name
-				generation := s.observedGeneration[name]
-				if generation < ipnode.Metadata.Generation {
-					s.observedGeneration[name] = ipnode.Metadata.Generation
+				version := s.observedGeneration[name]
+				curVersion := ipnode.Revision
+				if version < curVersion {
+					s.observedGeneration[name] = curVersion
 					s.liveSync.Lock()
+					glog.V(3).Infof("Ipnode %v is alive. Versions %v - %v",
+						name, version, curVersion)
 					s.liveIpNodes[name] = struct{}{}
 					s.liveSync.Unlock()
 				} else {
 					s.liveSync.Lock()
+					glog.V(3).Infof("Ipnode %v is dead. Versions %v - %v",
+						name, version, curVersion)
 					delete(s.liveIpNodes, name)
 					s.liveSync.Unlock()
 					labelSelector := labels.Set(map[string]string{"ipnode": name})
@@ -216,6 +251,8 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time
 					}
 					for _, ipclaim := range ipclaims.Items {
 						// TODO don't update - send to queue for rescheduling instead
+						glog.Infof("Sending ipclaim %v for rescheduling. CIDR %v, Previos node %v",
+							ipclaim.Metadata.Name, ipclaim.Spec.Cidr, ipclaim.Spec.NodeName)
 						ipclaim.Spec.NodeName = ""
 						ipclaim.Metadata.SetLabels(map[string]string{})
 						_, err := s.ExtensionsClientset.IPClaims().Update(&ipclaim)
