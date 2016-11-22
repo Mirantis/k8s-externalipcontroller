@@ -41,6 +41,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&IpNodeList{},
 		&IpClaim{},
 		&IpClaimList{},
+		&IpClaimPool{},
+		&IpClaimPoolList{},
 
 		&api.ListOptions{},
 		&api.DeleteOptions{},
@@ -123,11 +125,65 @@ type IpClaimSpec struct {
 	Link     string `json:"link" protobuf:"bytes,10,opt,name=link"`
 }
 
+type IpClaimPool struct {
+	unversioned.TypeMeta `json:",inline"`
+
+	// Standard object metadata
+	Metadata api.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+	Spec IpClaimPoolSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+}
+
+func (e *IpClaimPool) GetObjectKind() unversioned.ObjectKind {
+	return &e.TypeMeta
+}
+
+func (e *IpClaimPool) GetObjectMeta() meta.Object {
+	return &e.Metadata
+}
+
+type IpClaimPoolSpec struct {
+	Range string `json:"range" protobuf:"bytes,10,opt,name=range"`
+}
+
+type IpClaimPoolList struct {
+	unversioned.TypeMeta `json:",inline"`
+
+	// Standard list metadata.
+	unversioned.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+
+	Items []IpClaimPool `json:"items" protobuf:"bytes,2,rep,name=items"`
+}
+
 // see https://github.com/kubernetes/client-go/issues/8
 type ExampleIpNode IpNode
 type ExampleIpNodesList IpNodeList
 type ExampleIpClaim IpClaim
 type ExampleIpClaimList IpClaimList
+type ExampleIpClaimPool IpClaimPool
+type ExampleIpClaimPoolList IpClaimPoolList
+
+func (e *IpClaimPool) UnmarshalJSON(data []byte) error {
+	tmp := ExampleIpClaimPool{}
+	err := json.Unmarshal(data, &tmp)
+	if err != nil {
+		return err
+	}
+	tmp2 := IpClaimPool(tmp)
+	*e = tmp2
+	return nil
+}
+
+func (e *IpClaimPoolList) UnmarshalJSON(data []byte) error {
+	tmp := ExampleIpClaimPoolList{}
+	err := json.Unmarshal(data, &tmp)
+	if err != nil {
+		return err
+	}
+	tmp2 := IpClaimPoolList(tmp)
+	*e = tmp2
+	return nil
+}
 
 func (e *IpNode) UnmarshalJSON(data []byte) error {
 	tmp := ExampleIpNode{}

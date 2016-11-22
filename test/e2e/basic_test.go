@@ -148,15 +148,23 @@ var _ = Describe("Third party objects", func() {
 			clientset.Extensions().DaemonSets(ds.Namespace).Delete(ds.Name, &api.DeleteOptions{})
 		}
 		clientset.Namespaces().Delete(ns.Name, &api.DeleteOptions{})
+
 		ipnodes, err := ext.IPNodes().List(api.ListOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		for _, item := range ipnodes.Items {
 			ext.IPNodes().Delete(item.Metadata.Name, &api.DeleteOptions{})
 		}
+
 		ipclaims, err := ext.IPClaims().List(api.ListOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		for _, item := range ipclaims.Items {
 			ext.IPClaims().Delete(item.Metadata.Name, &api.DeleteOptions{})
+		}
+
+		ipclaimpools, err := ext.IPClaimPools().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		for _, item := range ipclaimpools.Items {
+			ext.IPClaimPools().Delete(item.Metadata.Name, &api.DeleteOptions{})
 		}
 	})
 
@@ -185,6 +193,25 @@ var _ = Describe("Third party objects", func() {
 			}
 			return nil
 		}, 30*time.Second, 2*time.Second).Should(BeNil())
+	})
+
+	It("Create IP claim pool resource via its client and try to retrieve it from k8s api back", func() {
+		var err error
+		err = extensions.EnsureThirdPartyResourcesExist(clientset)
+		Expect(err).NotTo(HaveOccurred())
+		ipclaimpool := &extensions.IpClaimPool{
+			Metadata: api.ObjectMeta{Name: "testclaimpool"},
+			Spec: extensions.IpClaimPoolSpec{
+				Range: "10.20.0.0/24",
+			},
+		}
+		_, err = ext.IPClaimPools().Create(ipclaimpool)
+		Expect(err).NotTo(HaveOccurred())
+
+		created, err := ext.IPClaimPools().Get("testclaimpool")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(created.Spec.Range).To(Equal("10.20.0.0/24"))
+		Expect(created.Metadata.Name).To(Equal("testclaimpool"))
 	})
 
 	It("Controller will add ips assigned by ipclaim [Native]", func() {

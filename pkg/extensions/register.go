@@ -22,10 +22,14 @@ import (
 )
 
 func EnsureThirdPartyResourcesExist(clientset *kubernetes.Clientset) error {
-	if err := ensureThirdPartyResource(clientset, "ip-node"); err != nil {
-		return err
+	resourceNames := []string{"ip-node", "ip-claim", "ip-claim-pool"}
+	for _, resName := range resourceNames {
+		if err := ensureThirdPartyResource(clientset, resName); err != nil {
+			return err
+		}
 	}
-	return ensureThirdPartyResource(clientset, "ip-claim")
+
+	return nil
 }
 
 func ensureThirdPartyResource(clientset *kubernetes.Clientset, name string) error {

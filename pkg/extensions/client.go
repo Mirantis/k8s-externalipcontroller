@@ -55,6 +55,7 @@ func extensionClient(config *rest.Config) (*rest.RESTClient, error) {
 type ExtensionsClientset interface {
 	IPNodes() IPNodesInterface
 	IPClaims() IPClaimsInterface
+	IPClaimPools() IPClaimPoolsInterface
 }
 
 type WrappedClientset struct {
@@ -79,6 +80,13 @@ type IPNodesInterface interface {
 	Delete(string, *api.DeleteOptions) error
 }
 
+type IPClaimPoolsInterface interface {
+	Create(*IpClaimPool) (*IpClaimPool, error)
+	Get(name string) (*IpClaimPool, error)
+	List(api.ListOptions) (*IpClaimPoolList, error)
+	Delete(string, *api.DeleteOptions) error
+}
+
 func (w *WrappedClientset) IPNodes() IPNodesInterface {
 	return &IPNodesClient{w.Client}
 }
@@ -87,11 +95,19 @@ func (w *WrappedClientset) IPClaims() IPClaimsInterface {
 	return &IpClaimClient{w.Client}
 }
 
+func (w *WrappedClientset) IPClaimPools() IPClaimPoolsInterface {
+	return &IpClaimPoolClient{w.Client}
+}
+
 type IPNodesClient struct {
 	client *rest.RESTClient
 }
 
 type IpClaimClient struct {
+	client *rest.RESTClient
+}
+
+type IpClaimPoolClient struct {
 	client *rest.RESTClient
 }
 
@@ -236,6 +252,54 @@ func (c *IpClaimClient) Delete(name string, options *api.DeleteOptions) error {
 	return c.client.Delete().
 		Namespace("default").
 		Resource("ipclaims").
+		Name(name).
+		Body(options).
+		Do().
+		Error()
+}
+
+func (c *IpClaimPoolClient) Get(name string) (result *IpClaimPool, err error) {
+	result = &IpClaimPool{}
+	err = c.client.Get().
+		Namespace("default").
+		Resource("ipclaimpools").
+		Name(name).
+		Do().
+		Into(result)
+
+	return result, err
+}
+
+func (c *IpClaimPoolClient) Create(ipclaimpool *IpClaimPool) (result *IpClaimPool, err error) {
+	result = &IpClaimPool{}
+	resp, err := c.client.Post().
+		Namespace("default").
+		Resource("ipclaimpools").
+		Body(ipclaimpool).
+		DoRaw()
+	if err != nil {
+		return result, err
+	}
+	return result, decodeResponseInto(resp, result)
+}
+
+func (c *IpClaimPoolClient) List(opts api.ListOptions) (result *IpClaimPoolList, err error) {
+	result = &IpClaimPoolList{}
+	resp, err := c.client.Get().
+		Namespace("default").
+		Resource("ipclaimpools").
+		VersionedParams(&opts, api.ParameterCodec).
+		DoRaw()
+	if err != nil {
+		return result, err
+	}
+	return result, decodeResponseInto(resp, result)
+}
+
+func (c *IpClaimPoolClient) Delete(name string, options *api.DeleteOptions) error {
+	return c.client.Delete().
+		Namespace("default").
+		Resource("ipclaimpools").
 		Name(name).
 		Body(options).
 		Do().
