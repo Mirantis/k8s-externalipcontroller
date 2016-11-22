@@ -108,7 +108,7 @@ $(BUILD_IMAGE_MARKER): $(BUILD_DIR)/ipmanager
 $(VENDOR_DIR):
 	$(DOCKER_EXEC) bash -xc 'go get github.com/Masterminds/glide && \
 		glide install --strip-vendor; \
-		chown $(shell id -u):$(shell id -u) -R vendor'
+		chown $(shell id -u):$(shell id -g) -R vendor'
 
 
 $(ENV_PREPARE_MARKER): build-image
