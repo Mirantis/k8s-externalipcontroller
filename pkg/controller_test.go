@@ -19,7 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Mirantis/k8s-externalipcontroller/pkg/ipmanager"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 	"github.com/stretchr/testify/mock"
 
@@ -56,7 +55,6 @@ func TestControllerServicesAdded(t *testing.T) {
 		source:    source,
 		ipHandler: fake,
 		Queue:     workqueue.NewQueue(),
-		manager:   &ipmanager.Noop{},
 	}
 
 	stopCh := make(chan struct{})
@@ -99,7 +97,6 @@ func TestProcessExternalIps(t *testing.T) {
 		Mask:      "24",
 		ipHandler: fake,
 		Queue:     workqueue.NewQueue(),
-		manager:   &ipmanager.Noop{},
 	}
 	testIps := [][]string{
 		{"10.10.0.2", "10.10.0.3"},
