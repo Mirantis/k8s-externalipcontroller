@@ -302,9 +302,9 @@ var _ = Describe("Third party objects", func() {
 		Expect(totalCount).To(BeNumerically("==", len(externalIPs)))
 
 		By("making one of the controllers unreachable and verifying that all ips are rescheduled onto the other pod")
-		rst, _, err := testutils.ExecInPod(clientset, dsPods[0], "pkill", "--echo", "-19", processName)
+		rst, _, err := testutils.ExecInPod(clientset, dsPods[0], "killall", "-19", processName)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(rst).NotTo(BeEmpty())
+		Expect(rst).To(BeEmpty())
 
 		By("verify that all ips are reassigned to another pod")
 		Eventually(func() error {
@@ -316,9 +316,9 @@ var _ = Describe("Third party objects", func() {
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 
 		By("bring back controller and verify that ips are purged")
-		rst, _, err = testutils.ExecInPod(clientset, dsPods[0], "pkill", "--echo", "-18", processName)
+		rst, _, err = testutils.ExecInPod(clientset, dsPods[0], "killall", "-18", processName)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(rst).NotTo(BeEmpty())
+		Expect(rst).To(BeEmpty())
 		Eventually(func() error {
 			if ips := getManagedIps(clientset, dsPods[0], network, "docker0"); ips == nil {
 				return nil
