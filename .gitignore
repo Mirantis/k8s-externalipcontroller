@@ -4,3 +4,5 @@ test.test
 vendor/
 _output/
 workdir/
+
+*.complete

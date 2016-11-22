@@ -3,19 +3,20 @@ IMAGE_TAG ?= latest
 DOCKER_BUILD ?= no
 
 BUILD_DIR = _output
+VENDOR_DIR = vendor
 ROOT_DIR = $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 ENV_PREPARE_MARKER = .env-prepare.complete
 BUILD_IMAGE_MARKER = .build-image.complete
 
-ifeq ( $(DOCKER_BUILD), yes )
-	DOCKER_EXEC =
-else
-	_DOCKER_GOPATH = /gopath
+ifeq ($(DOCKER_BUILD), yes)
+	_DOCKER_GOPATH = /go
 	_DOCKER_WORKDIR = $(_DOCKER_GOPATH)/src/github.com/Mirantis/k8s-externalipcontroller/
 	_DOCKER_IMAGE  = golang:1.7
 	DOCKER_EXEC = docker run --rm -it -v "$(ROOT_DIR):$(_DOCKER_WORKDIR)" \
-		-e "GOPATH=$(_DOCKER_GOPATH)" -w "$(_DOCKER_WORKDIR)" $(_DOCKER_IMAGE)
+		-w "$(_DOCKER_WORKDIR)" $(_DOCKER_IMAGE)
+else
+	DOCKER_EXEC =
 endif
 
 .PHONY: help
@@ -25,16 +26,20 @@ help:
 	@echo "Targets:"
 	@echo "help            - Print this message and exit"
 	@echo "get-deps        - Install project dependencies"
+	@echo "containerized-build - Build ipmanager binary in container"
 	@echo "build           - Build ipmanager binary"
 	@echo "build-image     - Build docker image"
 	@echo "test            - Run all tests"
 	@echo "unit            - Run unit tests"
 	@echo "integration     - Run integration tests"
 	@echo "e2e             - Run e2e tests"
+	@echo "clean           - Delete binaries"
+	@echo "clean-all       - Delete binaries and vendor files"
+
 .PHONY: get-deps
-get-deps:
-	go get github.com/Masterminds/glide
-	glide install --strip-vendor
+get-deps: $(VENDOR_DIR)
+
+
 .PHONY: build
 build: $(BUILD_DIR)/ipmanager
 
@@ -72,25 +77,38 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 
+.PHONY: clean-all
+clean-all: clean
+	rm -rf $(VENDOR_DIR)
+	rm -f $(BUILD_IMAGE_MARKER)
+	docker rmi -f $(IMAGE_REPO):$(IMAGE_TAG)
+
+
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 
-$(BUILD_DIR)/ipmanager: $(BUILD_DIR)
+$(BUILD_DIR)/ipmanager: $(BUILD_DIR) $(VENDOR_DIR)
 	$(DOCKER_EXEC) go build -o $@ ./cmd/ipmanager/
 
 
-$(BUILD_DIR)/e2e.test:
+$(BUILD_DIR)/e2e.test: $(BUILD_DIR) $(VENDOR_DIR)
 	$(DOCKER_EXEC) go test -c -o $@ ./test/e2e/
 
 
-$(BUILD_DIR)/integration.test: $(BUILD_DIR)
+$(BUILD_DIR)/integration.test: $(BUILD_DIR) $(VENDOR_DIR)
 	$(DOCKER_EXEC) go test -c -o $@ ./test/integration/
 
 
 $(BUILD_IMAGE_MARKER): $(BUILD_DIR)/ipmanager
 	docker build -t $(IMAGE_REPO):$(IMAGE_TAG) .
 	echo > $(BUILD_IMAGE_MARKER)
+
+
+$(VENDOR_DIR):
+	$(DOCKER_EXEC) bash -xc 'go get github.com/Masterminds/glide && \
+		glide install --strip-vendor; \
+		chown $(shell id -u):$(shell id -u) -R vendor'
 
 
 $(ENV_PREPARE_MARKER): build-image
