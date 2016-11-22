@@ -14,7 +14,7 @@ after_success:
         docker tag mirantis/k8s-externalipcontroller quay.io/l23network/k8s-externalipcontroller:latest;
         docker push quay.io/l23network/k8s-externalipcontroller:latest;
     fi
-    if [ ${TRAVIS_BRANCH:0:8} == "release-" ]; then
+  - if [ ${TRAVIS_BRANCH:0:8} == "release-" ]; then
         docker tag mirantis/k8s-externalipcontroller quay.io/l23network/k8s-externalipcontroller:$TRAVIS_BRANCH;
         docker push quay.io/l23network/k8s-externalipcontroller:$TRAVIS_BRANCH;
     fi
