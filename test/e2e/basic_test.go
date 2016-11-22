@@ -224,15 +224,32 @@ var _ = Describe("Third party objects", func() {
 		testutils.WaitForReady(clientset, pod)
 		Expect(err).NotTo(HaveOccurred())
 
+		By("creating ipclaim that is not assigned to any host")
+		fake := &extensions.IpClaim{
+			Metadata: api.ObjectMeta{Name: "fakeclaim"},
+		}
+		_, err = ext.IPClaims().Create(fake)
+		Expect(err).NotTo(HaveOccurred())
+
 		By("creating ipclaim assigned to host with name test")
+		claimLabels := map[string]string{"ipnode": "test"}
 		ipclaim := &extensions.IpClaim{
-			Metadata: api.ObjectMeta{Name: "testclaim"},
+			Metadata: api.ObjectMeta{
+				Name:   "testclaim",
+				Labels: map[string]string{"ipnode": "test"}},
 			Spec: extensions.IpClaimSpec{
 				Cidr:     "10.10.0.2/24",
 				NodeName: "test"},
 		}
 		_, err = ext.IPClaims().Create(ipclaim)
 		Expect(err).NotTo(HaveOccurred())
+
+		By("verify that label selector works")
+		ipclaims, err := ext.IPClaims().List(api.ListOptions{
+			LabelSelector: labels.Set(claimLabels).AsSelector(),
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(len(ipclaims.Items)).To(BeNumerically("==", 1))
 
 		By("verifying that cidr provided in ip claim was assigned")
 		_, network, err := net.ParseCIDR("10.10.0.0/24")

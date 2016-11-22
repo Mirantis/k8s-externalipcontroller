@@ -14,7 +14,10 @@
 
 package netutils
 
-import "github.com/vishvananda/netlink"
+import (
+	"github.com/golang/glog"
+	"github.com/vishvananda/netlink"
+)
 
 // EnsureIPAssigned will check if ip is already present on a given link
 func EnsureIPAssigned(iface, cidr string) error {
@@ -68,9 +71,11 @@ type IPHandler interface {
 type LinuxIPHandler struct{}
 
 func (l LinuxIPHandler) Add(iface, cidr string) error {
+	glog.V(2).Infof("Adding addr %v on link %v", cidr, iface)
 	return EnsureIPAssigned(iface, cidr)
 }
 func (l LinuxIPHandler) Del(iface, cidr string) error {
+	glog.V(2).Infof("Removing addr %v from link %v", cidr, iface)
 	return EnsureIPUnassigned(iface, cidr)
 }
 

@@ -133,7 +133,7 @@ func (c *IPNodesClient) List(opts api.ListOptions) (result *IpNodeList, err erro
 	resp, err := c.client.Get().
 		Namespace("default").
 		Resource("ipnodes").
-		VersionedParams(&opts, api.ParameterCodec).
+		LabelsSelectorParam(opts.LabelSelector).
 		DoRaw()
 	if err != nil {
 		return result, err
@@ -217,7 +217,7 @@ func (c *IpClaimClient) List(opts api.ListOptions) (result *IpClaimList, err err
 	resp, err := c.client.Get().
 		Namespace("default").
 		Resource("ipclaims").
-		VersionedParams(&opts, api.ParameterCodec).
+		LabelsSelectorParam(opts.LabelSelector).
 		DoRaw()
 	if err != nil {
 		return result, err

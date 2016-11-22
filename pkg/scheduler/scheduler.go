@@ -15,11 +15,13 @@
 package scheduler
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 
 	"github.com/golang/glog"
 	"k8s.io/client-go/1.5/kubernetes"
@@ -66,6 +68,8 @@ func NewIPClaimScheduler(config *rest.Config, mask string) (*ipClaimScheduler, e
 
 		observedGeneration: make(map[string]int64),
 		liveIpNodes:        make(map[string]struct{}),
+
+		queue: workqueue.NewQueue(),
 	}, nil
 }
 
@@ -85,13 +89,17 @@ type ipClaimScheduler struct {
 
 	claimStore   cache.Store
 	serviceStore cache.Store
+
+	queue workqueue.QueueType
 }
 
 func (s *ipClaimScheduler) Run(stop chan struct{}) {
+	go s.worker()
 	go s.serviceWatcher(stop)
 	go s.claimWatcher(stop)
 	go s.monitorIPNodes(stop, time.Tick(s.monitorPeriod))
 	<-stop
+	s.queue.Close()
 }
 
 // serviceWatcher creates/delets IPClaim based on requirements from
@@ -156,12 +164,20 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 			AddFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
 				glog.V(3).Infof("Ipclaim created %v", claim.Metadata.Name)
-				s.processIpClaim(claim)
+				key, err := cache.MetaNamespaceKeyFunc(claim)
+				if err != nil {
+					glog.Errorf("Error getting key %v", err)
+				}
+				s.queue.Add(key)
 			},
 			UpdateFunc: func(_, cur interface{}) {
 				claim := cur.(*extensions.IpClaim)
 				glog.V(3).Infof("Ipclaim updated %v", claim.Metadata.Name)
-				s.processIpClaim(claim)
+				key, err := cache.MetaNamespaceKeyFunc(claim)
+				if err != nil {
+					glog.Errorf("Error getting key %v", err)
+				}
+				s.queue.Add(key)
 			},
 		},
 	)
@@ -181,24 +197,42 @@ func (s *ipClaimScheduler) findAliveNodes(ipnodes []extensions.IpNode) (result [
 	return result
 }
 
-func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) {
-	if claim.Spec.NodeName != "" {
-		return
+func (s *ipClaimScheduler) worker() {
+	glog.V(1).Infof("Starting worker to process ip claims")
+	for {
+		key, quit := s.queue.Get()
+		glog.V(3).Infof("Got claim %v to process", key)
+		if quit {
+			return
+		}
+		item, exists, _ := s.claimStore.GetByKey(key.(string))
+		if exists {
+			err := s.processIpClaim(item.(*extensions.IpClaim))
+			if err != nil {
+				glog.Errorf("Error processing claim %v", err)
+				s.queue.Add(key)
+			}
+		}
+		glog.V(5).Infof("Processed claim %v", key)
+		s.queue.Done(key)
+	}
+}
+
+func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
+	if claim.Spec.NodeName != "" && s.isLive(claim.Spec.NodeName) {
+		return nil
 	}
 	ipnodes, err := s.ExtensionsClientset.IPNodes().List(api.ListOptions{})
 	if err != nil {
-		glog.Errorf("Can't get ip-nodes list %v", err)
-		return
+		return err
 	}
 	// this needs to be queued and requeud in case of node absence
 	if len(ipnodes.Items) == 0 {
-		glog.Errorf("No available ip-nodes to schedule claim")
-		return
+		return fmt.Errorf("No nodes")
 	}
 	liveNodes := s.findAliveNodes(ipnodes.Items)
 	if len(liveNodes) == 0 {
-		glog.Errorf("No live nodes")
-		return
+		return fmt.Errorf("No live nodes")
 	}
 	ipnode := s.findFairNode(liveNodes)
 	claim.Metadata.SetLabels(map[string]string{"ipnode": ipnode.Metadata.Name})
@@ -206,9 +240,7 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) {
 	glog.V(3).Infof("Scheduling claim %v on a node %v",
 		claim.Metadata.Name, claim.Spec.NodeName)
 	_, err = s.ExtensionsClientset.IPClaims().Update(claim)
-	if err != nil {
-		glog.Errorf("Claim update error %v %v", claim, err)
-	}
+	return err
 }
 
 func (s *ipClaimScheduler) findFairNode(ipnodes []*extensions.IpNode) *extensions.IpNode {
@@ -279,11 +311,11 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time
 						// TODO don't update - send to queue for rescheduling instead
 						glog.Infof("Sending ipclaim %v for rescheduling. CIDR %v, Previos node %v",
 							ipclaim.Metadata.Name, ipclaim.Spec.Cidr, ipclaim.Spec.NodeName)
-						ipclaim.Spec.NodeName = ""
-						ipclaim.Metadata.SetLabels(map[string]string{})
-						_, err := s.ExtensionsClientset.IPClaims().Update(&ipclaim)
+						key, err := cache.MetaNamespaceKeyFunc(&ipclaim)
 						if err != nil {
-							glog.Errorf("Error during ipclaim update %v", err)
+							glog.Errorf("Error getting key %v", err)
+						} else {
+							s.queue.Add(key)
 						}
 					}
 				}
@@ -306,6 +338,7 @@ func tryCreateIPClaim(ext extensions.ExtensionsClientset, ip, mask string) error
 	ipclaim := &extensions.IpClaim{
 		Metadata: api.ObjectMeta{Name: key},
 		Spec:     extensions.IpClaimSpec{Cidr: cidr}}
+	glog.V(2).Infof("Creating ipclaim %v", key)
 	_, err := ext.IPClaims().Create(ipclaim)
 	if errors.IsAlreadyExists(err) {
 		return nil
@@ -316,5 +349,6 @@ func tryCreateIPClaim(ext extensions.ExtensionsClientset, ip, mask string) error
 func deleteIPClaim(ext extensions.ExtensionsClientset, ip, mask string) error {
 	ipParts := strings.Split(ip, ".")
 	key := strings.Join([]string{strings.Join(ipParts, "-"), mask}, "-")
+	glog.V(2).Infof("Deleting ipclaim %v", key)
 	return ext.IPClaims().Delete(key, &api.DeleteOptions{})
 }
