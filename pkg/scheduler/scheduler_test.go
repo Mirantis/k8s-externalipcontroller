@@ -20,6 +20,7 @@ import (
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	fclient "github.com/Mirantis/k8s-externalipcontroller/pkg/extensions/testing"
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -73,9 +74,12 @@ func TestClaimWatcher(t *testing.T) {
 		claimSource:         lw,
 		ExtensionsClientset: ext,
 		liveIpNodes:         make(map[string]struct{}),
+		queue:               workqueue.NewQueue(),
 	}
+	go s.worker()
 	go s.claimWatcher(stop)
 	defer close(stop)
+	defer s.queue.Close()
 	claim := &extensions.IpClaim{
 		Metadata: api.ObjectMeta{Name: "10.10.0.2-24"},
 		Spec:     extensions.IpClaimSpec{Cidr: "10.10.0.2/24"},
@@ -115,6 +119,7 @@ func TestMonitorIpNodes(t *testing.T) {
 		ExtensionsClientset: ext,
 		liveIpNodes:         make(map[string]struct{}),
 		observedGeneration:  make(map[string]int64),
+		queue:               workqueue.NewQueue(),
 	}
 	ipnodesList := &extensions.IpNodeList{
 		Items: []extensions.IpNode{
@@ -152,20 +157,13 @@ func TestMonitorIpNodes(t *testing.T) {
 	}
 	ext.Ipnodes.On("List", mock.Anything).Return(ipnodesList, nil).Twice()
 	ext.Ipclaims.On("List", mock.Anything).Return(ipclaimsList, nil)
-	ext.Ipclaims.On("Update", mock.Anything).Return(nil).Twice()
 	go s.monitorIPNodes(stop, ticker)
 	defer close(stop)
 	utils.EventualCondition(t, time.Second*1, func() bool {
 		return assert.ObjectsAreEqual(len(ext.Ipnodes.Calls), 2)
 	}, "Unexpected call count to ipnodes", ext.Ipnodes.Calls)
 	utils.EventualCondition(t, time.Second*1, func() bool {
-		return assert.ObjectsAreEqual(len(ext.Ipclaims.Calls), 3)
+		return assert.ObjectsAreEqual(len(ext.Ipclaims.Calls), 1)
 	}, "Unexpected call count to ipclaims", ext.Ipclaims.Calls)
-	updateCalls := ext.Ipclaims.Calls[1:]
-	for _, call := range updateCalls {
-		ipclaim := call.Arguments[0].(*extensions.IpClaim)
-		assert.Equal(t, ipclaim.Metadata.Labels, map[string]string{}, "monitor should clean all ipclaim labels")
-		assert.Equal(t, ipclaim.Spec.NodeName, "", "monitor should clean node name")
-	}
 	assert.Equal(t, s.isLive("first"), false, "first node shouldn't be considered live")
 }

@@ -113,6 +113,7 @@ func (c *claimController) claimWatcher(stop chan struct{}) {
 			},
 			DeleteFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
+				glog.V(3).Infof("Received delete event for %v - %v", claim.Metadata.Name, claim.Spec.NodeName)
 				if claim.Spec.NodeName != c.Uid {
 					return
 				}
@@ -132,7 +133,7 @@ func (c *claimController) worker() {
 		}
 		err := c.processClaim(item.(*extensions.IpClaim))
 		if err != nil {
-			glog.Errorf("Error processin claim %v", err)
+			glog.Errorf("Error processing claim %v", err)
 			c.queue.Add(item)
 		}
 		c.queue.Done(item)
@@ -140,6 +141,8 @@ func (c *claimController) worker() {
 }
 
 func (c *claimController) processClaim(ipclaim *extensions.IpClaim) error {
+	glog.V(5).Infof("Processing claim %v with node %v and uid %v",
+		ipclaim.Spec.Cidr, ipclaim.Spec.NodeName, c.Uid)
 	if _, exists, _ := c.claimStore.Get(ipclaim); !exists {
 		return c.iphandler.Del(c.Iface, ipclaim.Spec.Cidr)
 	}
