@@ -23,7 +23,6 @@ import (
 	"k8s.io/client-go/1.5/tools/clientcmd"
 
 	externalip "github.com/Mirantis/k8s-externalipcontroller/pkg"
-	"github.com/Mirantis/k8s-externalipcontroller/pkg/ipmanager"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 )
 
@@ -43,8 +42,6 @@ func InitNaiveController() error {
 	kubeconfig := AppOpts.Kubeconfig
 	iface := AppOpts.Iface
 	mask := AppOpts.Mask
-	ipmanagerType := AppOpts.IPManagerType
-	etcdEndpoints := AppOpts.EtcdEndpoints
 
 	glog.V(4).Infof("Starting external ip controller using link: %s and mask: /%s", iface, mask)
 	stopCh := make(chan struct{})
@@ -63,22 +60,12 @@ func InitNaiveController() error {
 		return err
 	}
 
-	var manager ipmanager.Manager
-	switch ipmanagerType {
-	case "fair":
-		manager, err = ipmanager.NewFairEtcd(etcdEndpoints, stopCh, q)
-		if err != nil {
-			glog.Errorf("error intializing fair etcd manager %v", err)
-			os.Exit(1)
-		}
-	}
-
 	host, err := os.Hostname()
 	if err != nil {
 		return err
 	}
 
-	c, err := externalip.NewExternalIpController(config, host, iface, mask, manager, q)
+	c, err := externalip.NewExternalIpController(config, host, iface, mask, q)
 	if err != nil {
 		return err
 	}

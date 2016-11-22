@@ -17,7 +17,6 @@ package externalip
 import (
 	"reflect"
 
-	"github.com/Mirantis/k8s-externalipcontroller/pkg/ipmanager"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 	"github.com/golang/glog"
@@ -39,10 +38,9 @@ type ExternalIpController struct {
 	source    cache.ListerWatcher
 	ipHandler netutils.IPHandler
 	Queue     workqueue.QueueType
-	manager   ipmanager.Manager
 }
 
-func NewExternalIpController(config *rest.Config, uid, iface, mask string, ipmanagerInst ipmanager.Manager, queue workqueue.QueueType) (*ExternalIpController, error) {
+func NewExternalIpController(config *rest.Config, uid, iface, mask string, queue workqueue.QueueType) (*ExternalIpController, error) {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, err
@@ -50,10 +48,6 @@ func NewExternalIpController(config *rest.Config, uid, iface, mask string, ipman
 
 	if queue == nil {
 		queue = workqueue.NewQueue()
-	}
-
-	if ipmanagerInst == nil {
-		ipmanagerInst = &ipmanager.Noop{}
 	}
 
 	lw := &cache.ListWatch{
@@ -71,14 +65,10 @@ func NewExternalIpController(config *rest.Config, uid, iface, mask string, ipman
 		source:    lw,
 		ipHandler: netutils.LinuxIPHandler{},
 		Queue:     queue,
-		manager:   ipmanagerInst,
 	}, nil
 }
 
-func NewExternalIpControllerWithSource(uid, iface, mask string, source cache.ListerWatcher, ipmanagerInst ipmanager.Manager) *ExternalIpController {
-	if ipmanagerInst == nil {
-		ipmanagerInst = &ipmanager.Noop{}
-	}
+func NewExternalIpControllerWithSource(uid, iface, mask string, source cache.ListerWatcher) *ExternalIpController {
 	return &ExternalIpController{
 		Uid:       uid,
 		Iface:     iface,
@@ -86,7 +76,6 @@ func NewExternalIpControllerWithSource(uid, iface, mask string, source cache.Lis
 		source:    source,
 		ipHandler: netutils.LinuxIPHandler{},
 		Queue:     workqueue.NewQueue(),
-		manager:   ipmanagerInst,
 	}
 }
 
@@ -135,15 +124,8 @@ func (c *ExternalIpController) processItem(item interface{}) {
 	var action string
 	switch t := item.(type) {
 	case *netutils.AddCIDR:
-		var fit bool
-		fit, err = c.manager.Fit(c.Uid, t.Cidr)
-		if !fit && err == nil {
-			return
-		}
-		if err == nil {
-			err = c.ipHandler.Add(c.Iface, t.Cidr)
-			cidr = t.Cidr
-		}
+		err = c.ipHandler.Add(c.Iface, t.Cidr)
+		cidr = t.Cidr
 		action = "assignment"
 
 	case *netutils.DelCIDR:

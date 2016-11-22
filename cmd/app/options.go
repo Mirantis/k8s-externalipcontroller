@@ -16,12 +16,10 @@ package app
 import "github.com/spf13/pflag"
 
 type options struct {
-	Kubeconfig    string
-	Iface         string
-	Mask          string
-	Hostname      string
-	EtcdEndpoints []string
-	IPManagerType string
+	Kubeconfig string
+	Iface      string
+	Mask       string
+	Hostname   string
 }
 
 var AppOpts = options{}
@@ -34,7 +32,5 @@ func (o *options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&o.Iface, "iface", "eth0", "Current interface will be used to assign ip addresses")
 	fs.StringVar(&o.Mask, "mask", "32", "mask part of the cidr")
 	fs.StringVar(&o.Kubeconfig, "kubeconfig", "", "kubeconfig to use with kubernetes client")
-	fs.StringVar(&o.IPManagerType, "ipmanager", "noop", "choose noop or fair")
-	fs.StringSliceVar(&o.EtcdEndpoints, "etcd", []string{}, "use to specify etcd endpoints")
 	fs.StringVar(&o.Hostname, "hostname", "", "We will use os.Hostname if none provided")
 }
