@@ -299,6 +299,18 @@ var _ = Describe("Third party objects", func() {
 				return fmt.Errorf("Unexpected IP %v", ips)
 			}
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
+
+		By("deleting service and verifying that ips are purged accross all pods")
+		err = clientset.Core().Services(ns.Name).Delete(nginxName, &api.DeleteOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() error {
+			if ips := getManagedIps(clientset, dsPods[1], network, "docker0"); ips == nil {
+				return nil
+			} else {
+				return fmt.Errorf("Unexpected IP %v", ips)
+			}
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+
 	})
 })
 
