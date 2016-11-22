@@ -296,7 +296,7 @@ var _ = Describe("Third party objects", func() {
 		var totalCount int
 		for i := range dsPods {
 			managedIPs := getManagedIps(clientset, dsPods[i], network, "docker0")
-			Expect(len(managedIPs)).To(BeNumerically("<=", len(externalIPs)))
+			Expect(len(managedIPs)).To(BeNumerically("<", len(externalIPs)))
 			totalCount += len(managedIPs)
 		}
 		Expect(totalCount).To(BeNumerically("==", len(externalIPs)))

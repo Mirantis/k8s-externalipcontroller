@@ -200,7 +200,7 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) {
 		glog.Errorf("No live nodes")
 		return
 	}
-	ipnode := liveNodes[0]
+	ipnode := s.findFairNode(liveNodes)
 	claim.Metadata.SetLabels(map[string]string{"ipnode": ipnode.Metadata.Name})
 	claim.Spec.NodeName = ipnode.Metadata.Name
 	glog.V(3).Infof("Scheduling claim %v on a node %v",
@@ -209,6 +209,32 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) {
 	if err != nil {
 		glog.Errorf("Claim update error %v %v", claim, err)
 	}
+}
+
+func (s *ipClaimScheduler) findFairNode(ipnodes []*extensions.IpNode) *extensions.IpNode {
+	counter := make(map[string]int)
+	for _, key := range s.claimStore.ListKeys() {
+		obj, _, err := s.claimStore.GetByKey(key)
+		claim := obj.(*extensions.IpClaim)
+		if err != nil {
+			glog.Errorln(err)
+			continue
+		}
+		if claim.Spec.NodeName == "" {
+			continue
+		}
+		counter[claim.Spec.NodeName]++
+	}
+	var min *extensions.IpNode
+	minCount := -1
+	for _, node := range ipnodes {
+		count := counter[node.Metadata.Name]
+		if minCount == -1 || count < minCount {
+			minCount = count
+			min = node
+		}
+	}
+	return min
 }
 
 func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time.Time) {
