@@ -21,9 +21,10 @@ import (
 )
 
 func EventualCondition(t assert.TestingT, wait time.Duration, comp assert.Comparison, msgAndArgs ...interface{}) bool {
+	after := time.After(wait)
 	for {
 		select {
-		case <-time.After(wait):
+		case <-after:
 			return assert.Condition(t, comp, msgAndArgs...)
 		case <-time.Tick(10 * time.Millisecond):
 			if comp() {
