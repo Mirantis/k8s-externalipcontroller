@@ -24,8 +24,9 @@ import (
 
 type FakeExtClientset struct {
 	mock.Mock
-	Ipclaims *fakeIpClaims
-	Ipnodes  *fakeIpNodes
+	Ipclaims     *fakeIpClaims
+	Ipnodes      *fakeIpNodes
+	Ipclaimpools *fakeIpClaimPools
 }
 
 func (f *FakeExtClientset) IPClaims() extensions.IPClaimsInterface {
@@ -34,6 +35,10 @@ func (f *FakeExtClientset) IPClaims() extensions.IPClaimsInterface {
 
 func (f *FakeExtClientset) IPNodes() extensions.IPNodesInterface {
 	return f.Ipnodes
+}
+
+func (f *FakeExtClientset) IPClaimPools() extensions.IPClaimPoolsInterface {
+	return f.Ipclaimpools
 }
 
 type fakeIpClaims struct {
@@ -102,9 +107,34 @@ func (f *fakeIpNodes) Watch(_ api.ListOptions) (watch.Interface, error) {
 	return nil, nil
 }
 
+type fakeIpClaimPools struct {
+	mock.Mock
+}
+
+func (f *fakeIpClaimPools) Create(ipclaimpool *extensions.IpClaimPool) (*extensions.IpClaimPool, error) {
+	args := f.Called(ipclaimpool)
+	return ipclaimpool, args.Error(0)
+}
+
+func (f *fakeIpClaimPools) List(opts api.ListOptions) (*extensions.IpClaimPoolList, error) {
+	args := f.Called(opts)
+	return args.Get(0).(*extensions.IpClaimPoolList), args.Error(1)
+}
+
+func (f *fakeIpClaimPools) Delete(name string, opts *api.DeleteOptions) error {
+	args := f.Called(name, opts)
+	return args.Error(0)
+}
+
+func (f *fakeIpClaimPools) Get(name string) (*extensions.IpClaimPool, error) {
+	args := f.Called(name)
+	return args.Get(0).(*extensions.IpClaimPool), args.Error(1)
+}
+
 func NewFakeExtClientset() *FakeExtClientset {
 	return &FakeExtClientset{
-		Ipclaims: &fakeIpClaims{},
-		Ipnodes:  &fakeIpNodes{},
+		Ipclaims:     &fakeIpClaims{},
+		Ipnodes:      &fakeIpNodes{},
+		Ipclaimpools: &fakeIpClaimPools{},
 	}
 }
