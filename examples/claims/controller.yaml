@@ -1,0 +1,24 @@
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: claimcontroller
+spec:
+  template:
+    metadata:
+      labels:
+        app: externalipcontroller
+    spec:
+      hostNetwork: true
+      containers:
+      - name: externalipcontroller
+        image: mirantis/k8s-externalipcontroller
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+        command:
+          - ipmanager
+          - claimcontroller
+          # iface is environment specific
+          - --iface=docker0
+          - --logtostderr
+          - --v=5
