@@ -114,8 +114,7 @@ $(VENDOR_DIR):
 
 
 $(ENV_PREPARE_MARKER): build-image
-	./scripts/kube.sh
-	./scripts/dind.sh
+	./prepare.sh
 	CONTAINER_ID=$$(docker create $(IMAGE_REPO):$(IMAGE_TAG) bash) && \
 		docker export $$CONTAINER_ID > $(BUILD_DIR)/ipcontroller.tar
 	docker cp $(BUILD_DIR)/ipcontroller.tar dind_node_1:/tmp
