@@ -129,25 +129,12 @@ func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 						glog.Errorf("Unable to create ip claim %v", err)
 					}
 				}
+				oldSvc := old.(*v1.Service)
+				s.processOldService(oldSvc)
 			},
 			DeleteFunc: func(obj interface{}) {
-				refs := map[string]struct{}{}
-				svcList := s.serviceStore.List()
-				for i := range svcList {
-					svc := svcList[i].(*v1.Service)
-					for _, ip := range svc.Spec.ExternalIPs {
-						refs[ip] = struct{}{}
-					}
-				}
 				svc := obj.(*v1.Service)
-				for _, ip := range svc.Spec.ExternalIPs {
-					if _, ok := refs[ip]; !ok {
-						err := deleteIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
-						if err != nil {
-							glog.Errorf("Unable to delete %v", err)
-						}
-					}
-				}
+				s.processOldService(svc)
 			},
 		},
 	)
@@ -215,6 +202,25 @@ func (s *ipClaimScheduler) worker() {
 		}
 		glog.V(5).Infof("Processed claim %v", key)
 		s.queue.Done(key)
+	}
+}
+
+func (s *ipClaimScheduler) processOldService(svc *v1.Service) {
+	refs := map[string]struct{}{}
+	svcList := s.serviceStore.List()
+	for i := range svcList {
+		svc := svcList[i].(*v1.Service)
+		for _, ip := range svc.Spec.ExternalIPs {
+			refs[ip] = struct{}{}
+		}
+	}
+	for _, ip := range svc.Spec.ExternalIPs {
+		if _, ok := refs[ip]; !ok {
+			err := deleteIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
+			if err != nil {
+				glog.Errorf("Unable to delete %v", err)
+			}
+		}
 	}
 }
 
