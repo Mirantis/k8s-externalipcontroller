@@ -1,0 +1,21 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: claimscheduler
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: claimscheduler
+    spec:
+      containers:
+        - name: externalipcontroller
+          image: mirantis/k8s-externalipcontroller
+          imagePullPolicy: IfNotPresent
+          command:
+            - ipmanager
+            - scheduler
+            - --mask=24
+            - --logtostderr
+            - --v=5
