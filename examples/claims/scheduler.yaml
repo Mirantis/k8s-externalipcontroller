@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: claimscheduler
+spec:
+   containers:
+      - name: externalipcontroller
+        image: mirantis/k8s-externalipcontroller
+        imagePullPolicy: IfNotPresent
+        command:
+          - ipmanager
+          - scheduler
+          - --mask=24
+          - --logtostderr
+          - --v=5
