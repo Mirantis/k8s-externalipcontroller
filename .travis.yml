@@ -8,3 +8,13 @@ before_install:
 install:
   - make get-deps
 script: make test
+after_success:
+  - docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
+  - BRANCH=$(git rev-parse --abbrev-ref HEAD)
+  - if [ "$BRANCH" == "master" ]; then
+        docker push mirantis/k8s-externalipcontroller:latest;
+    fi
+  - if [ "${BRANCH:0:8}" == "release-" ]; then
+        docker tag mirantis/k8s-externalipcontroller mirantis/k8s-externalipcontroller:$BRANCH;
+        docker push mirantis/k8s-externalipcontroller:$BRANCH;
+    fi
