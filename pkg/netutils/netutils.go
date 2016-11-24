@@ -143,3 +143,12 @@ type AddCIDR struct {
 type DelCIDR struct {
 	Cidr string
 }
+
+func IPIncrement(ip net.IP) {
+	for j := len(ip) - 1; j >= 0; j-- {
+		ip[j]++
+		if ip[j] > 0 {
+			break
+		}
+	}
+}
