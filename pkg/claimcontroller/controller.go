@@ -45,6 +45,7 @@ func NewClaimController(iface, uid string, config *rest.Config) (*claimControlle
 			return ext.IPClaims().List(options)
 		},
 		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+			glog.V(3).Infof("Calling claim watcher with options %v", options)
 			return ext.IPClaims().Watch(options)
 		},
 	}
@@ -94,7 +95,8 @@ func (c *claimController) claimWatcher(stop chan struct{}) {
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
-				glog.V(3).Infof("Received add event for ipclaim %v - %v", claim.Metadata.Name, claim.Spec.NodeName)
+				glog.V(3).Infof("Received add event for ipclaim %v - %v - %v",
+					claim.Metadata.Name, claim.Spec.NodeName, claim.Metadata.ResourceVersion)
 				if claim.Spec.NodeName != c.Uid {
 					return
 				}
@@ -103,9 +105,9 @@ func (c *claimController) claimWatcher(stop chan struct{}) {
 			UpdateFunc: func(old, cur interface{}) {
 				oldClaim := old.(*extensions.IpClaim)
 				curClaim := cur.(*extensions.IpClaim)
-				glog.V(3).Infof("Received update event. Old ipclaim %v - %v, New ipclaim %v - %v",
+				glog.V(3).Infof("Received update event. Old ipclaim %v - %v, New ipclaim %v - %v -%v",
 					oldClaim.Metadata.Name, oldClaim.Spec.NodeName,
-					curClaim.Metadata.Name, curClaim.Spec.NodeName)
+					curClaim.Metadata.Name, curClaim.Spec.NodeName, curClaim.Metadata.ResourceVersion)
 				if oldClaim.Spec.NodeName != c.Uid && curClaim.Spec.NodeName != c.Uid {
 					return
 				}
@@ -113,7 +115,8 @@ func (c *claimController) claimWatcher(stop chan struct{}) {
 			},
 			DeleteFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
-				glog.V(3).Infof("Received delete event for %v - %v", claim.Metadata.Name, claim.Spec.NodeName)
+				glog.V(3).Infof("Received delete event for %v - %v. Resource version %v",
+					claim.Metadata.Name, claim.Spec.NodeName, claim.Metadata.ResourceVersion)
 				if claim.Spec.NodeName != c.Uid {
 					return
 				}

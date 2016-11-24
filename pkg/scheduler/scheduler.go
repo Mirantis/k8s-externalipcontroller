@@ -159,12 +159,18 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 			},
 			UpdateFunc: func(_, cur interface{}) {
 				claim := cur.(*extensions.IpClaim)
-				glog.V(3).Infof("Ipclaim updated %v", claim.Metadata.Name)
+				glog.V(3).Infof("Ipclaim updated %v, resource version %v",
+					claim.Metadata.Name, claim.Metadata.ResourceVersion)
 				key, err := cache.MetaNamespaceKeyFunc(claim)
 				if err != nil {
 					glog.Errorf("Error getting key %v", err)
 				}
 				s.queue.Add(key)
+			},
+			DeleteFunc: func(obj interface{}) {
+				claim := obj.(*extensions.IpClaim)
+				glog.V(3).Infof("Ipclaim deleted %v, resource version %v",
+					claim.Metadata.Name, claim.Metadata.ResourceVersion)
 			},
 		},
 	)
