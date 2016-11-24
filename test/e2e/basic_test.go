@@ -247,7 +247,9 @@ var _ = Describe("Third party objects", func() {
 		})
 		defer versionWatcher.Stop()
 		Expect(err).NotTo(HaveOccurred())
-		verifyEventsCount(versionWatcher, 1)
+		err = ext.IPClaims().Delete(second.Metadata.Name, &api.DeleteOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		verifyEventsCount(versionWatcher, 2)
 	})
 
 	It("Controller will add ips assigned by ipclaim [Native]", func() {
@@ -551,7 +553,8 @@ func verifyEventsCount(watcher watch.Interface, expectedCount int) {
 	Eventually(func() error {
 		var count int
 		for ev := range watcher.ResultChan() {
-			testutils.Logf("Received event %v\n", ev)
+			claim := ev.Object.(*extensions.IpClaim)
+			testutils.Logf("Received event %v -- %v\n", ev.Type, claim.Metadata.Name)
 			count++
 			if count == expectedCount {
 				return nil
