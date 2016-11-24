@@ -3,6 +3,11 @@ language: go
 services:
     - docker
 before_install:
+  - BRANCH=$(git rev-parse --abbrev-ref HEAD)
+  - if [ "$BRANCH" == "HEAD" ]; then
+        echo "yep";
+    fi
+  - exit 1
   - mkdir -p _output/
   - sudo apt-get install -y git
 install:
