@@ -10,7 +10,9 @@ source "${CURDIR}/config.sh"
 
 function fetch-kube {
         cd ${WORKDIRECTORY}
-        git clone https://github.com/kubernetes/kubernetes.git
+        if [ ! -d "kubernetes" ]; then
+            git clone https://github.com/kubernetes/kubernetes.git
+        fi
         cd kubernetes/
         git checkout tags/v1.4.4
         go get -u github.com/jteeuwen/go-bindata/go-bindata
