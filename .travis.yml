@@ -11,7 +11,6 @@ script: make test
 after_success:
   - docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
   - BRANCH=$(git rev-parse --abbrev-ref HEAD)
-  - echo "$BRANCH"
   - if [ "$BRANCH" == "master" ]; then
         docker push mirantis/k8s-externalipcontroller:latest;
     fi
