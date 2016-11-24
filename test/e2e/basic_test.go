@@ -109,6 +109,7 @@ var _ = Describe("Third party objects", func() {
 	var addrToClear []string
 	var ipcontrollerLabels = map[string]string{"app": "ipcontroller"}
 	var linkToUse = "docker0"
+	var nodes *v1.NodeList
 
 	BeforeEach(func() {
 		var err error
@@ -125,6 +126,14 @@ var _ = Describe("Third party objects", func() {
 		}
 		ns, err = clientset.Namespaces().Create(namespaceObj)
 		Expect(err).NotTo(HaveOccurred())
+		By("adding name=<name> label to each node")
+		nodes, err = clientset.Core().Nodes().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		for _, node := range nodes.Items {
+			node.Labels["name"] = node.Name
+			_, err := clientset.Core().Nodes().Update(&node)
+			Expect(err).NotTo(HaveOccurred())
+		}
 	})
 
 	AfterEach(func() {
@@ -382,7 +391,7 @@ var _ = Describe("Third party objects", func() {
 			}
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 
-		By("deleting service and verifying that ips are purged accross all pods")
+		By("deleting service and verifying that ips are purged from second controller")
 		err = clientset.Core().Services(ns.Name).Delete(nginxName, &api.DeleteOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func() error {
@@ -392,7 +401,124 @@ var _ = Describe("Third party objects", func() {
 				return fmt.Errorf("Unexpected IP %v", ips)
 			}
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
+	})
 
+	It("Daemon set version should recover after crash and reassign ips", func() {
+		processName := "ipmanager"
+		By("deploying claim scheduler pod")
+		pod := newPod(
+			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{processName, "s", "--mask=24", "--logtostderr", "--v=5"}, nil, false, false)
+		_, err := clientset.Core().Pods(ns.Name).Create(pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("deploying claim controller daemon set")
+		// sh -c will be PID 1 and we will be able to stop our process
+		cmd := []string{processName, "c", "--logtostderr", "--v=5", "--iface=docker0"}
+		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{"sh", "-c", strings.Join(cmd, " ")}, ipcontrollerLabels, true, true)
+		ds, err = clientset.Extensions().DaemonSets(ns.Name).Create(ds)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("waiting until both nodes will be registered")
+		Eventually(func() error {
+			ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+			if err != nil {
+				return err
+			}
+			if len(ipnodes.Items) != 2 {
+				return fmt.Errorf("Unexpected nodes length %v", ipnodes.Items)
+			}
+			return nil
+		}, time.Second*30, 2*time.Second).Should(BeNil())
+
+		By("deploying nginx pod and service with multiple external ips")
+		nginxName := "nginx"
+		var nginxPort int32 = 2288
+		_, network, err := net.ParseCIDR("10.107.10.0/24")
+		Expect(err).NotTo(HaveOccurred())
+		externalIPs := []string{"10.107.10.7", "10.107.10.8"}
+		addrToClear = append(addrToClear, externalIPs...)
+		deployNginxPodAndService(nginxName, nginxPort, clientset, ns, externalIPs)
+
+		By("assigning ip from external ip pool to a node where test is running")
+		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.107.10.10/24")).Should(BeNil())
+
+		By("verifying that ips are distributed among all daemon set pods")
+		dsPods := getPodsByLabels(clientset, ns, ipcontrollerLabels)
+		Expect(len(dsPods)).To(BeNumerically(">", 1))
+		var totalCount int
+		for i := range dsPods {
+			managedIPs := getManagedIps(clientset, dsPods[i], network, "docker0")
+			Expect(len(managedIPs)).To(BeNumerically("<", len(externalIPs)))
+			totalCount += len(managedIPs)
+		}
+		Expect(totalCount).To(BeNumerically("==", len(externalIPs)))
+
+		By("adding nodeSelector which will exclude node " + nodes.Items[0].Name)
+		ds, err = clientset.Extensions().DaemonSets(ns.Name).Get("externalipcontroller")
+		Expect(err).NotTo(HaveOccurred())
+		ds.Spec.Template.Spec.NodeSelector = map[string]string{
+			"name": nodes.Items[0].Name,
+		}
+		ds, err = clientset.Extensions().DaemonSets(ns.Name).Update(ds)
+		Expect(err).NotTo(HaveOccurred())
+		var zero int64 = 0
+		for _, pod := range dsPods {
+			err := clientset.Core().Pods(ns.Name).Delete(pod.Name, &api.DeleteOptions{
+				GracePeriodSeconds: &zero,
+			})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		By("waiting until only single pod will be running")
+		Eventually(func() error {
+			dsPods := getPodsByLabels(clientset, ns, ipcontrollerLabels)
+			if len(dsPods) != 1 {
+				return fmt.Errorf("Unexpected length of pods %v", len(dsPods))
+			}
+			return nil
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+
+		By("verifying that all ips are recheduled onto live pod")
+		dsPods = getPodsByLabels(clientset, ns, ipcontrollerLabels)
+		liveController := dsPods[0].Name
+		Expect(len(dsPods)).To(BeNumerically("==", 1))
+		Eventually(func() error {
+			allIPs := getManagedIps(clientset, dsPods[0], network, "docker0")
+			if len(allIPs) != len(externalIPs) {
+				return fmt.Errorf("Not all IPs were reassigned to another pod: %v", allIPs)
+			}
+			return nil
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+
+		By("remove nodeSelector from daemon set and wait until both of controllers will be running")
+		ds, err = clientset.Extensions().DaemonSets(ns.Name).Get("externalipcontroller")
+		Expect(err).NotTo(HaveOccurred())
+		ds.Spec.Template.Spec.NodeSelector = map[string]string{}
+		ds, err = clientset.Extensions().DaemonSets(ns.Name).Update(ds)
+		Expect(err).NotTo(HaveOccurred())
+		var newController v1.Pod
+		Eventually(func() error {
+			dsPods := getPodsByLabels(clientset, ns, ipcontrollerLabels)
+			if len(dsPods) != 2 {
+				return fmt.Errorf("Unexpected length of pods %v", len(dsPods))
+			}
+			for _, pod := range dsPods {
+				if pod.Name != liveController {
+					newController = pod
+				}
+			}
+			return nil
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+		By("verifying that all ips are purged from new controller " + newController.Name)
+		Eventually(func() error {
+			if ips := getManagedIps(clientset, newController, network, "docker0"); ips == nil {
+				return nil
+			} else {
+				return fmt.Errorf("Unexpected IP %v", ips)
+			}
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
 	})
 })
 
