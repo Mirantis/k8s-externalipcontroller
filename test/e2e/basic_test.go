@@ -33,6 +33,7 @@ import (
 	"k8s.io/client-go/1.5/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/1.5/pkg/labels"
 	"k8s.io/client-go/1.5/pkg/util/intstr"
+	"k8s.io/client-go/1.5/pkg/watch"
 )
 
 var _ = Describe("Basic", func() {
@@ -212,6 +213,43 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(created.Spec.Range).To(Equal("10.20.0.0/24"))
 		Expect(created.Metadata.Name).To(Equal("testclaimpool"))
+	})
+
+	It("IpClaim watcher should work with resouce version as expected", func() {
+		By("ensuring that third party resources are created")
+		err := extensions.EnsureThirdPartyResourcesExist(clientset)
+		By("creating ipclaim object")
+		Expect(err).NotTo(HaveOccurred())
+		ipclaim := &extensions.IpClaim{
+			Metadata: api.ObjectMeta{
+				Name:   "watchclaim",
+				Labels: map[string]string{"ipnode": "test"}},
+			Spec: extensions.IpClaimSpec{
+				Cidr: "10.10.0.2/24",
+			},
+		}
+		first, err := ext.IPClaims().Create(ipclaim)
+		Expect(err).NotTo(HaveOccurred())
+		testutils.Logf("first resource version %v\n", first.Metadata.ResourceVersion)
+		By("creating another ipclaim")
+		ipclaim.Metadata.Name = "anothertest"
+		second, err := ext.IPClaims().Create(ipclaim)
+		testutils.Logf("second resouce version %v\n", second.Metadata.ResourceVersion)
+		Expect(err).NotTo(HaveOccurred())
+		By("creating watcher and expecting two events")
+		watcher, err := ext.IPClaims().Watch(api.ListOptions{})
+		defer watcher.Stop()
+		Expect(err).NotTo(HaveOccurred())
+		verifyEventsCount(watcher, 2)
+		By("creating watcher with resource version and expecting one event")
+		versionWatcher, err := ext.IPClaims().Watch(api.ListOptions{
+			ResourceVersion: first.Metadata.ResourceVersion,
+		})
+		defer versionWatcher.Stop()
+		Expect(err).NotTo(HaveOccurred())
+		err = ext.IPClaims().Delete(second.Metadata.Name, &api.DeleteOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		verifyEventsCount(versionWatcher, 2)
 	})
 
 	It("Controller will add ips assigned by ipclaim [Native]", func() {
@@ -509,4 +547,19 @@ func ensureAddrRemoved(clientset *kubernetes.Clientset, pod v1.Pod, link string,
 		// ignore all errors
 		testutils.ExecInPod(clientset, pod, "ip", "a", "del", "dev", link, addr)
 	}
+}
+
+func verifyEventsCount(watcher watch.Interface, expectedCount int) {
+	Eventually(func() error {
+		var count int
+		for ev := range watcher.ResultChan() {
+			claim := ev.Object.(*extensions.IpClaim)
+			testutils.Logf("Received event %v -- %v\n", ev.Type, claim.Metadata.Name)
+			count++
+			if count == expectedCount {
+				return nil
+			}
+		}
+		return fmt.Errorf("Channel closed and didnt receive any events")
+	}, 10*time.Second, 1*time.Second).Should(BeNil())
 }

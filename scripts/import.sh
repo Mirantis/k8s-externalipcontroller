@@ -21,7 +21,7 @@ function import-image {
 
         for i in `seq 1 "${NUM_NODES}"`;
         do
-            docker cp _output/ipcontroller.tar dind_node_$1:/tmp
+            docker cp _output/ipcontroller.tar dind_node_$i:/tmp
             docker exec -ti dind_node_$i docker import /tmp/ipcontroller.tar ${IMAGE_REPO}:${IMAGE_TAG}
         done
         set +o xtrace

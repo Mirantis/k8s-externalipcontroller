@@ -230,7 +230,7 @@ func (c *IpClaimClient) Watch(opts api.ListOptions) (watch.Interface, error) {
 		Namespace("default").
 		Prefix("watch").
 		Resource("ipclaims").
-		VersionedParams(&opts, api.ParameterCodec).
+		Param("resourceVersion", opts.ResourceVersion).
 		Watch()
 }
 

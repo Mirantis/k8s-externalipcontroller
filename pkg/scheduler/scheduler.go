@@ -121,7 +121,6 @@ func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 				}
 			},
 			UpdateFunc: func(old, cur interface{}) {
-				// handle old
 				curSvc := cur.(*v1.Service)
 				for _, ip := range curSvc.Spec.ExternalIPs {
 					err := tryCreateIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
@@ -159,12 +158,18 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 			},
 			UpdateFunc: func(_, cur interface{}) {
 				claim := cur.(*extensions.IpClaim)
-				glog.V(3).Infof("Ipclaim updated %v", claim.Metadata.Name)
+				glog.V(3).Infof("Ipclaim updated %v, resource version %v",
+					claim.Metadata.Name, claim.Metadata.ResourceVersion)
 				key, err := cache.MetaNamespaceKeyFunc(claim)
 				if err != nil {
 					glog.Errorf("Error getting key %v", err)
 				}
 				s.queue.Add(key)
+			},
+			DeleteFunc: func(obj interface{}) {
+				claim := obj.(*extensions.IpClaim)
+				glog.V(3).Infof("Ipclaim deleted %v, resource version %v",
+					claim.Metadata.Name, claim.Metadata.ResourceVersion)
 			},
 		},
 	)
@@ -218,7 +223,8 @@ func (s *ipClaimScheduler) processOldService(svc *v1.Service) {
 		if _, ok := refs[ip]; !ok {
 			err := deleteIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
 			if err != nil {
-				glog.Errorf("Unable to delete %v", err)
+				glog.Errorf("Unable to delete %v. Err %v",
+					ip, err)
 			}
 		}
 	}
@@ -245,7 +251,9 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
 	claim.Spec.NodeName = ipnode.Metadata.Name
 	glog.V(3).Infof("Scheduling claim %v on a node %v",
 		claim.Metadata.Name, claim.Spec.NodeName)
-	_, err = s.ExtensionsClientset.IPClaims().Update(claim)
+	claim, err = s.ExtensionsClientset.IPClaims().Update(claim)
+	glog.V(3).Infof("Claim %v updated with node %v. Resource version %v",
+		claim.Metadata.Name, claim.Spec.NodeName, claim.Metadata.ResourceVersion)
 	return err
 }
 
