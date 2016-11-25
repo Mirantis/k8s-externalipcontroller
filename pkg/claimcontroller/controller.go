@@ -97,9 +97,6 @@ func (c *claimController) claimWatcher(stop chan struct{}) {
 				claim := obj.(*extensions.IpClaim)
 				glog.V(3).Infof("Received add event for ipclaim %v - %v - %v",
 					claim.Metadata.Name, claim.Spec.NodeName, claim.Metadata.ResourceVersion)
-				if claim.Spec.NodeName != c.Uid {
-					return
-				}
 				c.queue.Add(claim)
 			},
 			UpdateFunc: func(old, cur interface{}) {
@@ -108,18 +105,12 @@ func (c *claimController) claimWatcher(stop chan struct{}) {
 				glog.V(3).Infof("Received update event. Old ipclaim %v - %v, New ipclaim %v - %v -%v",
 					oldClaim.Metadata.Name, oldClaim.Spec.NodeName,
 					curClaim.Metadata.Name, curClaim.Spec.NodeName, curClaim.Metadata.ResourceVersion)
-				if oldClaim.Spec.NodeName != c.Uid && curClaim.Spec.NodeName != c.Uid {
-					return
-				}
 				c.queue.Add(curClaim)
 			},
 			DeleteFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
 				glog.V(3).Infof("Received delete event for %v - %v. Resource version %v",
 					claim.Metadata.Name, claim.Spec.NodeName, claim.Metadata.ResourceVersion)
-				if claim.Spec.NodeName != c.Uid {
-					return
-				}
 				c.queue.Add(claim)
 			},
 		},
