@@ -2,6 +2,11 @@ sudo: required
 language: go
 services:
     - docker
+env:
+  - WORKDIRECTORY=$HOME/kube
+cache:
+  directories:
+    - $HOME/kube
 before_install:
   - mkdir -p _output/
   - sudo apt-get install -y git
