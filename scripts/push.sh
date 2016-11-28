@@ -5,10 +5,15 @@ set -o nounset
 set -o pipefail
 
 function push-to-docker {
+    if [ "$TRAVIS_PULL_REQUEST_BRANCH" != "" ]; then
+         echo "Processing PR $TRAVIS_PULL_REQUEST_BRANCH"
+         exit 0
+    fi
+
     docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
 
     set -o xtrace
-    local branch=`git rev-parse --abbrev-ref HEAD`
+    local branch=$TRAVIS_BRANCH
     echo "Using git branch $branch"
 
     if [ $branch == "master" ]; then
