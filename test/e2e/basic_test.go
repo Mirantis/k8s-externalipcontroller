@@ -566,6 +566,61 @@ var _ = Describe("Third party objects", func() {
 			}
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 	})
+
+	It("Daemon set version with same hostname should assign all ips on all nodes", func() {
+		processName := "ipmanager"
+		nodeName := "testnode"
+		By("deploying claim scheduler pod")
+		pod := newPod(
+			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{processName, "s", "--mask=24", "--logtostderr", "--v=5"}, nil, false, false)
+		_, err := clientset.Core().Pods(ns.Name).Create(pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("deploying claim controller daemon set")
+		// sh -c will be PID 1 and we will be able to stop our process
+		cmd := []string{processName, "c", "--logtostderr", "--v=5", "--iface=eth0", "--hostname=" + nodeName}
+		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{"sh", "-c", strings.Join(cmd, " ")}, ipcontrollerLabels, false, true)
+		ds, err = clientset.Extensions().DaemonSets(ns.Name).Create(ds)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("waiting until both nodes will be registered")
+		Eventually(func() error {
+			ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+			if err != nil {
+				return err
+			}
+			for _, node := range ipnodes.Items {
+				if node.Metadata.Name == nodeName {
+					return nil
+				}
+			}
+			return fmt.Errorf("Node with name %v is not found", nodeName)
+		}, time.Second*30, 2*time.Second).Should(BeNil())
+
+		By("deploying nginx pod and service with multiple external ips")
+		nginxName := "nginx"
+		var nginxPort int32 = 2288
+		_, network, err := net.ParseCIDR("10.107.10.0/24")
+		Expect(err).NotTo(HaveOccurred())
+		externalIPs := []string{"10.107.10.7", "10.107.10.8"}
+		addrToClear = append(addrToClear, externalIPs...)
+		deployNginxPodAndService(nginxName, nginxPort, clientset, ns, externalIPs)
+
+		dsPods := getPodsByLabels(clientset, ns, ipcontrollerLabels)
+		Expect(len(dsPods)).To(BeNumerically(">", 1))
+		Eventually(func() error {
+			for i := range dsPods {
+				managedIPs := getManagedIps(clientset, dsPods[i], network, "eth0")
+				if len(managedIPs) != len(externalIPs) {
+					return fmt.Errorf("Managed ips %v are not equal to expected ips for pod %v",
+						managedIPs, dsPods[i].Name)
+				}
+			}
+			return nil
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+	})
 })
 
 func newPrivilegedPodSpec(containerName, imageName string, cmd []string, hostNetwork, privileged bool) v1.PodSpec {
