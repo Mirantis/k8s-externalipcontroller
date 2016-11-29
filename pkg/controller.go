@@ -16,6 +16,7 @@ package externalip
 
 import (
 	"reflect"
+	"time"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
@@ -38,16 +39,14 @@ type ExternalIpController struct {
 	source    cache.ListerWatcher
 	ipHandler netutils.IPHandler
 	Queue     workqueue.QueueType
+
+	resyncInterval time.Duration
 }
 
-func NewExternalIpController(config *rest.Config, uid, iface, mask string, queue workqueue.QueueType) (*ExternalIpController, error) {
+func NewExternalIpController(config *rest.Config, uid, iface, mask string, resyncInterval time.Duration) (*ExternalIpController, error) {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, err
-	}
-
-	if queue == nil {
-		queue = workqueue.NewQueue()
 	}
 
 	lw := &cache.ListWatch{
@@ -59,12 +58,13 @@ func NewExternalIpController(config *rest.Config, uid, iface, mask string, queue
 		},
 	}
 	return &ExternalIpController{
-		Uid:       uid,
-		Iface:     iface,
-		Mask:      mask,
-		source:    lw,
-		ipHandler: netutils.LinuxIPHandler{},
-		Queue:     queue,
+		Uid:            uid,
+		Iface:          iface,
+		Mask:           mask,
+		source:         lw,
+		ipHandler:      netutils.LinuxIPHandler{},
+		Queue:          workqueue.NewQueue(),
+		resyncInterval: resyncInterval,
 	}, nil
 }
 
@@ -85,7 +85,7 @@ func (c *ExternalIpController) Run(stopCh chan struct{}) {
 	store, controller := cache.NewInformer(
 		c.source,
 		&v1.Service{},
-		0,
+		c.resyncInterval,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				c.processServiceExternalIPs(nil, obj.(*v1.Service), store)

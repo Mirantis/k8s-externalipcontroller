@@ -60,7 +60,7 @@ func InitController() error {
 		return err
 	}
 	stop := make(chan struct{})
-	c, err := claimcontroller.NewClaimController(iface, uid, config)
+	c, err := claimcontroller.NewClaimController(iface, uid, config, AppOpts.ResyncInterval)
 	if err != nil {
 		return err
 	}
