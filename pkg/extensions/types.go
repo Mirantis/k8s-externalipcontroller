@@ -16,6 +16,7 @@ package extensions
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 
 	"k8s.io/client-go/1.5/pkg/api"
@@ -183,8 +184,7 @@ func (p *IpClaimPool) AvailableIP() (availableIP string, err error) {
 		netutils.IPIncrement(next)
 	}
 
-	//TODO(aroma): return custom error in case free IP was not found
-	return
+	return "", errors.New("There is no free IP left in the pool")
 }
 
 func (p *IpClaimPool) GetObjectKind() unversioned.ObjectKind {

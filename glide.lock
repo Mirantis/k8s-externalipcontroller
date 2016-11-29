@@ -160,7 +160,7 @@ imports:
 - name: github.com/spf13/cobra
   version: 9495bc009a56819bdb0ddbc1a373e29c140bc674
 - name: github.com/spf13/pflag
-  version: 1560c1005499d61b80f865c04d39ca7505bf7f0b
+  version: 5ccb023bc27df288a957c5e994cd44fd19619465
 - name: github.com/stretchr/objx
   version: 1a9d0bb9f541897e62256577b352fdbc1fb4fd94
 - name: github.com/stretchr/testify
@@ -237,21 +237,34 @@ imports:
 - name: gopkg.in/yaml.v2
   version: 53feefa2559fb8dfa8d81baad31be332c97d6c77
 - name: k8s.io/client-go
-  version: 6631b2769fbf8fd8ff6b2074d64774b010c7d37a
+  version: 843f7c4f28b1f647f664f883697107d5c02c5acc
   subpackages:
   - 1.5/discovery
+  - 1.5/discovery/fake
   - 1.5/kubernetes
+  - 1.5/kubernetes/fake
   - 1.5/kubernetes/typed/apps/v1alpha1
+  - 1.5/kubernetes/typed/apps/v1alpha1/fake
   - 1.5/kubernetes/typed/authentication/v1beta1
+  - 1.5/kubernetes/typed/authentication/v1beta1/fake
   - 1.5/kubernetes/typed/authorization/v1beta1
+  - 1.5/kubernetes/typed/authorization/v1beta1/fake
   - 1.5/kubernetes/typed/autoscaling/v1
+  - 1.5/kubernetes/typed/autoscaling/v1/fake
   - 1.5/kubernetes/typed/batch/v1
+  - 1.5/kubernetes/typed/batch/v1/fake
   - 1.5/kubernetes/typed/certificates/v1alpha1
+  - 1.5/kubernetes/typed/certificates/v1alpha1/fake
   - 1.5/kubernetes/typed/core/v1
+  - 1.5/kubernetes/typed/core/v1/fake
   - 1.5/kubernetes/typed/extensions/v1beta1
+  - 1.5/kubernetes/typed/extensions/v1beta1/fake
   - 1.5/kubernetes/typed/policy/v1alpha1
+  - 1.5/kubernetes/typed/policy/v1alpha1/fake
   - 1.5/kubernetes/typed/rbac/v1alpha1
+  - 1.5/kubernetes/typed/rbac/v1alpha1/fake
   - 1.5/kubernetes/typed/storage/v1beta1
+  - 1.5/kubernetes/typed/storage/v1beta1/fake
   - 1.5/pkg/api
   - 1.5/pkg/api/errors
   - 1.5/pkg/api/install
@@ -339,6 +352,7 @@ imports:
   - 1.5/plugin/pkg/client/auth/gcp
   - 1.5/plugin/pkg/client/auth/oidc
   - 1.5/rest
+  - 1.5/testing
   - 1.5/tools/auth
   - 1.5/tools/cache
   - 1.5/tools/cache/testing

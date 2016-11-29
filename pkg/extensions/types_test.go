@@ -29,6 +29,21 @@ func checkFreeIP(p *IpClaimPool, expected string, t *testing.T) {
 	}
 }
 
+func checkNoFreeIPError(p *IpClaimPool, t *testing.T) {
+	ip, err := p.AvailableIP()
+
+	if len(ip) != 0 {
+		t.Error("AvailableIP must return empty string as IP value in case there is no free IP")
+	}
+	if err == nil {
+		t.Error("AvailableIP must return error in case there is no free IP")
+	}
+	expectedErrMsg := "There is no free IP left in the pool"
+	if err.Error() != expectedErrMsg {
+		t.Errorf("Message of the returned by AvailableIP error is not as expected ('%v'). Actual: %v", expectedErrMsg, err)
+	}
+}
+
 func TestIpClaimPoolAvailableIPFromCIDR(t *testing.T) {
 	cidr := "192.168.16.248/29"
 	allocated := map[string]string{
@@ -52,7 +67,7 @@ func TestIpClaimPoolAvailableIPFromCIDR(t *testing.T) {
 	allocated["192.168.16.254"] = "test-claim-254"
 	allocated["192.168.16.251"] = "test-claim-251"
 
-	checkFreeIP(ClaimPool, "", t)
+	checkNoFreeIPError(ClaimPool, t)
 }
 
 func TestIpClaimPoolAvailableIPFromRange(t *testing.T) {
@@ -78,5 +93,5 @@ func TestIpClaimPoolAvailableIPFromRange(t *testing.T) {
 
 	allocated["192.168.16.252"] = "test-claim-252"
 
-	checkFreeIP(ClaimPool, "", t)
+	checkNoFreeIPError(ClaimPool, t)
 }

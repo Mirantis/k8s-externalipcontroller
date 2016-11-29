@@ -121,6 +121,11 @@ func (f *fakeIpClaimPools) List(opts api.ListOptions) (*extensions.IpClaimPoolLi
 	return args.Get(0).(*extensions.IpClaimPoolList), args.Error(1)
 }
 
+func (f *fakeIpClaimPools) Update(ipclaimpool *extensions.IpClaimPool) (*extensions.IpClaimPool, error) {
+	args := f.Called(ipclaimpool)
+	return args.Get(0).(*extensions.IpClaimPool), args.Error(1)
+}
+
 func (f *fakeIpClaimPools) Delete(name string, opts *api.DeleteOptions) error {
 	args := f.Called(name, opts)
 	return args.Error(0)
