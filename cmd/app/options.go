@@ -13,13 +13,18 @@
 // limitations under the License.
 package app
 
-import "github.com/spf13/pflag"
+import (
+	"time"
+
+	"github.com/spf13/pflag"
+)
 
 type options struct {
-	Kubeconfig string
-	Iface      string
-	Mask       string
-	Hostname   string
+	Kubeconfig     string
+	Iface          string
+	Mask           string
+	Hostname       string
+	ResyncInterval time.Duration
 }
 
 var AppOpts = options{}
@@ -33,4 +38,5 @@ func (o *options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&o.Mask, "mask", "32", "mask part of the cidr")
 	fs.StringVar(&o.Kubeconfig, "kubeconfig", "", "kubeconfig to use with kubernetes client")
 	fs.StringVar(&o.Hostname, "hostname", "", "We will use os.Hostname if none provided")
+	fs.DurationVar(&o.ResyncInterval, "resync", 20*time.Second, "Time to resync state for all ips")
 }

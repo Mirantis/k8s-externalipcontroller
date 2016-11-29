@@ -23,7 +23,6 @@ import (
 	"k8s.io/client-go/1.5/tools/clientcmd"
 
 	externalip "github.com/Mirantis/k8s-externalipcontroller/pkg"
-	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 )
 
 func init() {
@@ -45,7 +44,6 @@ func InitNaiveController() error {
 
 	glog.V(4).Infof("Starting external ip controller using link: %s and mask: /%s", iface, mask)
 	stopCh := make(chan struct{})
-	q := workqueue.NewQueue()
 
 	var err error
 	var config *rest.Config
@@ -65,7 +63,7 @@ func InitNaiveController() error {
 		return err
 	}
 
-	c, err := externalip.NewExternalIpController(config, host, iface, mask, q)
+	c, err := externalip.NewExternalIpController(config, host, iface, mask, AppOpts.ResyncInterval)
 	if err != nil {
 		return err
 	}

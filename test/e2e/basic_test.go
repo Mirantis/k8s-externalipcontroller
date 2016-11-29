@@ -310,6 +310,52 @@ var _ = Describe("Third party objects", func() {
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 	})
 
+	It("Controller will resync ips removed by hand [Native]", func() {
+		By("Deploying controller with resync interval 1s")
+		pod := newPod(
+			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{"ipmanager", "c", "--iface=eth0", "--hostname=test", "--logtostderr", "--v=10", "--resync=1s"},
+			nil, false, true)
+		pod, err := clientset.Core().Pods(ns.Name).Create(pod)
+		testutils.WaitForReady(clientset, pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("creating ipclaim assigned to host with name test")
+		ipclaim := &extensions.IpClaim{
+			Metadata: api.ObjectMeta{
+				Name:   "testclaim",
+				Labels: map[string]string{"ipnode": "test"}},
+			Spec: extensions.IpClaimSpec{
+				Cidr:     "10.101.0.7/24",
+				NodeName: "test"},
+		}
+		_, err = ext.IPClaims().Create(ipclaim)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying that cidr provided in ip claim was assigned")
+		_, network, err := net.ParseCIDR("10.101.0.0/24")
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() error {
+			if ips := getManagedIps(clientset, *pod, network, "eth0"); len(ips) == 1 {
+				return nil
+			} else {
+				return fmt.Errorf("Unexpected IP count - %v", ips)
+			}
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+
+		By("removing " + ipclaim.Spec.Cidr + " from ipcontroller")
+		ensureAddrRemoved(clientset, *pod, "eth0", []string{ipclaim.Spec.Cidr})
+
+		By("verifying that address list is still the same")
+		Eventually(func() error {
+			if ips := getManagedIps(clientset, *pod, network, "eth0"); len(ips) == 1 {
+				return nil
+			} else {
+				return fmt.Errorf("Unexpected IP count - %v", ips)
+			}
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+	})
+
 	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [Native]", func() {
 		processName := "ipmanager"
 		By("deploying claim scheduler pod")

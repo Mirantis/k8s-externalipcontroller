@@ -31,7 +31,7 @@ import (
 	"k8s.io/client-go/1.5/tools/cache"
 )
 
-func NewClaimController(iface, uid string, config *rest.Config) (*claimController, error) {
+func NewClaimController(iface, uid string, config *rest.Config, resyncInterval time.Duration) (*claimController, error) {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, err
@@ -59,6 +59,7 @@ func NewClaimController(iface, uid string, config *rest.Config) (*claimControlle
 		queue:               queue,
 		iphandler:           netutils.LinuxIPHandler{},
 		heartbeatPeriod:     2 * time.Second,
+		resyncInterval:      resyncInterval,
 	}, nil
 }
 
@@ -77,6 +78,8 @@ type claimController struct {
 
 	// heartbeatPeriod for a node, should be < monitorPeriod in scheduller
 	heartbeatPeriod time.Duration
+
+	resyncInterval time.Duration
 }
 
 func (c *claimController) Run(stop chan struct{}) {
@@ -91,7 +94,7 @@ func (c *claimController) claimWatcher(stop chan struct{}) {
 	store, controller := cache.NewInformer(
 		c.claimSource,
 		&extensions.IpClaim{},
-		0,
+		c.resyncInterval,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
