@@ -209,10 +209,15 @@ var _ = Describe("Third party objects", func() {
 		var err error
 		err = extensions.EnsureThirdPartyResourcesExist(clientset)
 		Expect(err).NotTo(HaveOccurred())
+
+		eRange := []string{"10.20.0.10/24", "10.20.0.20/24"}
+		eAllocated := map[string]string{"10.20.0.11/24": "testclaim"}
 		ipclaimpool := &extensions.IpClaimPool{
 			Metadata: api.ObjectMeta{Name: "testclaimpool"},
 			Spec: extensions.IpClaimPoolSpec{
-				Range: "10.20.0.0/24",
+				CIDR:      "10.20.0.0/24",
+				Range:     eRange,
+				Allocated: eAllocated,
 			},
 		}
 		_, err = ext.IPClaimPools().Create(ipclaimpool)
@@ -220,8 +225,10 @@ var _ = Describe("Third party objects", func() {
 
 		created, err := ext.IPClaimPools().Get("testclaimpool")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(created.Spec.Range).To(Equal("10.20.0.0/24"))
+		Expect(created.Spec.CIDR).To(Equal("10.20.0.0/24"))
 		Expect(created.Metadata.Name).To(Equal("testclaimpool"))
+		Expect(created.Spec.Range).To(Equal(eRange))
+		Expect(created.Spec.Allocated).To(Equal(eAllocated))
 	})
 
 	It("IpClaim watcher should work with resouce version as expected", func() {

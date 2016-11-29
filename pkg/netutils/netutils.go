@@ -15,6 +15,8 @@
 package netutils
 
 import (
+	"net"
+
 	"github.com/golang/glog"
 	"github.com/vishvananda/netlink"
 )
@@ -85,4 +87,26 @@ type AddCIDR struct {
 
 type DelCIDR struct {
 	Cidr string
+}
+
+func IPIncrement(ip net.IP) {
+	for j := len(ip) - 1; j >= 0; j-- {
+		ip[j]++
+		if ip[j] > 0 {
+			break
+		}
+	}
+}
+
+//BroadCastIP retrieves brodcast IP for given network;
+//broadcast address is a binary sum of network address
+//and inverted network mask
+func BroadCastIP(network *net.IPNet) net.IP {
+	broadcast := net.IP(make([]byte, net.IPv4len))
+
+	for i := range network.IP {
+		broadcast[i] = network.IP[i] | ^network.Mask[i]
+	}
+
+	return broadcast
 }
