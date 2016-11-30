@@ -25,6 +25,8 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	testutils "github.com/Mirantis/k8s-externalipcontroller/test/e2e/utils"
 
+	"github.com/vishvananda/netlink"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/1.5/kubernetes"
@@ -411,6 +413,23 @@ var _ = Describe("Third party objects", func() {
 		}
 		Expect(totalCount).To(BeNumerically("==", len(externalIPs)))
 
+		By("verifying that all IPs are spread across two MACs in ARP table")
+		neigh, err := netlink.NeighList(0, 0)
+		Expect(err).NotTo(HaveOccurred())
+		macs := map[string]bool{}
+		ips_count := 0
+		for arp_i := range neigh {
+			for ext_i := range externalIPs {
+				if neigh[arp_i].IP.String() == externalIPs[ext_i] {
+					macs[neigh[arp_i].HardwareAddr.String()] = true
+					ips_count ++
+					break
+				}
+			}
+		}
+		Expect(ips_count).To(BeNumerically("==", len(externalIPs)))
+		Expect(len(macs)).To(BeNumerically("==", 2))
+
 		By("making one of the controllers unreachable and verifying that all ips are rescheduled onto the other pod")
 		rst, _, err := testutils.ExecInPod(clientset, dsPods[0], "killall", "-19", processName)
 		Expect(err).NotTo(HaveOccurred())
@@ -424,6 +443,23 @@ var _ = Describe("Third party objects", func() {
 			}
 			return nil
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
+
+		By("verifying that all IPs point to one MACs in ARP table")
+		neigh, err = netlink.NeighList(0, 0)
+		Expect(err).NotTo(HaveOccurred())
+		macs = map[string]bool{}
+		ips_count = 0
+		for arp_i := range neigh {
+			for ext_i := range externalIPs {
+				if neigh[arp_i].IP.String() == externalIPs[ext_i] {
+					macs[neigh[arp_i].HardwareAddr.String()] = true
+					ips_count ++
+					break
+				}
+			}
+		}
+		Expect(ips_count).To(BeNumerically("==", len(externalIPs)))
+		Expect(len(macs)).To(BeNumerically("==", 1))
 
 		By("bring back controller and verify that ips are purged")
 		rst, _, err = testutils.ExecInPod(clientset, dsPods[0], "killall", "-18", processName)
@@ -753,6 +789,7 @@ func getManagedIps(clientset *kubernetes.Clientset, pod v1.Pod, network *net.IPN
 	rst, _, err := testutils.ExecInPod(clientset, pod, "ip", "a", "show", "dev", linkName)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(rst).NotTo(BeEmpty())
+
 	var managedIPs []net.IP
 	for _, line := range strings.Split(rst, "\n") {
 		if !strings.Contains(line, "inet") {

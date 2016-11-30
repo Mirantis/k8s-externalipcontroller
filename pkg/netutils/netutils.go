@@ -15,9 +15,59 @@
 package netutils
 
 import (
+	"net"
+
 	"github.com/golang/glog"
 	"github.com/vishvananda/netlink"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
 )
+
+func writeARP(handle *pcap.Handle, iface *net.Interface, addr *net.IPNet) error {
+	// Set up all the layers' fields we can.
+	eth := layers.Ethernet{
+		SrcMAC:       iface.HardwareAddr,
+		DstMAC:       net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+		EthernetType: layers.EthernetTypeARP,
+	}
+	arp := layers.ARP{
+		AddrType:          layers.LinkTypeEthernet,
+		Protocol:          layers.EthernetTypeIPv4,
+		HwAddressSize:     6,
+		ProtAddressSize:   4,
+		Operation:         layers.ARPRequest,
+		SourceHwAddress:   []byte(iface.HardwareAddr),
+		SourceProtAddress: []byte(addr.IP.To4()),
+		DstHwAddress:      []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+		DstProtAddress:    []byte(addr.IP.To4()),
+	}
+	// Set up buffer and options for serialization.
+	buf := gopacket.NewSerializeBuffer()
+	opts := gopacket.SerializeOptions{
+		FixLengths:       true,
+		ComputeChecksums: false,
+	}
+	// Send one packet for every address.
+	gopacket.SerializeLayers(buf, opts, &eth, &arp)
+	if err := handle.WritePacketData(buf.Bytes()); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ArpAnnouncement(ifname string, addr *net.IPNet) error {
+	iface, err := net.InterfaceByName(ifname)
+	if err != nil {
+		return err
+	}
+	handle, err := pcap.OpenLive(iface.Name, 65536, true, pcap.BlockForever)
+	if err != nil {
+		return err
+	}
+	defer handle.Close()
+	return writeARP(handle, iface, addr)
+}
 
 // EnsureIPAssigned will check if ip is already present on a given link
 func EnsureIPAssigned(iface, cidr string) error {
@@ -38,10 +88,17 @@ func EnsureIPAssigned(iface, cidr string) error {
 			return nil
 		}
 	}
-	return netlink.AddrAdd(link, addr)
+	err = netlink.AddrAdd(link, addr)
+	if err != nil {
+		return err
+	}
+	if iface != "lo" {
+		return ArpAnnouncement(iface, addr.IPNet)
+	}
+	return nil
 }
 
-// ensure that given IP is not present on a given link
+// EnsureIPUnassigned ensure that given IP is not present on a given link
 func EnsureIPUnassigned(iface, cidr string) error {
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
