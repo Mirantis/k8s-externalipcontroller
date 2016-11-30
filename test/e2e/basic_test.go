@@ -31,10 +31,12 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api"
+	"k8s.io/client-go/1.5/pkg/api/errors"
 	"k8s.io/client-go/1.5/pkg/api/v1"
 	"k8s.io/client-go/1.5/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/1.5/pkg/labels"
 	"k8s.io/client-go/1.5/pkg/util/intstr"
+	"k8s.io/client-go/1.5/pkg/util/wait"
 	"k8s.io/client-go/1.5/pkg/watch"
 )
 
@@ -112,9 +114,11 @@ var _ = Describe("Third party objects", func() {
 	var ipcontrollerLabels = map[string]string{"app": "ipcontroller"}
 	var linkToUse = "docker0"
 	var nodes *v1.NodeList
+	var network *net.IPNet
 
 	BeforeEach(func() {
 		var err error
+		addrToClear = []string{}
 		clientset, err = testutils.KubeClient()
 		Expect(err).NotTo(HaveOccurred())
 		ext, err = extensions.WrapClientsetWithExtensions(clientset, testutils.LoadConfig())
@@ -136,57 +140,129 @@ var _ = Describe("Third party objects", func() {
 			_, err := clientset.Core().Nodes().Update(&node)
 			Expect(err).NotTo(HaveOccurred())
 		}
+		extensions.RemoveThirdPartyResources(clientset)
+		err = extensions.EnsureThirdPartyResourcesExist(clientset)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
 		selector := labels.Set(ipcontrollerLabels).AsSelector()
-		ipcontrollerPods, err := clientset.Core().Pods(ns.Name).List(
-			api.ListOptions{LabelSelector: selector},
-		)
-		if err != nil {
+		By("clearing addr")
+		eventuallyWrapper(func() (bool, error) {
+			if len(addrToClear) == 0 {
+				return true, nil
+			}
+			ipcontrollerPods, err := clientset.Core().Pods(ns.Name).List(
+				api.ListOptions{LabelSelector: selector},
+			)
+			if err != nil {
+				return false, err
+			}
 			for _, pod := range ipcontrollerPods.Items {
+				testutils.Logf("clearing addr %v; network %v\n", addrToClear, network)
 				ensureAddrRemoved(clientset, pod, linkToUse, addrToClear)
 			}
-		}
-
+			return true, nil
+		})
+		By("dumping logs")
 		podList, _ := clientset.Core().Pods(ns.Name).List(api.ListOptions{LabelSelector: labels.Everything()})
 		if CurrentGinkgoTestDescription().Failed {
 			testutils.DumpLogs(clientset, podList.Items...)
 		}
-		for _, pod := range podList.Items {
-			clientset.Core().Pods(pod.Namespace).Delete(pod.Name, &api.DeleteOptions{})
-		}
-		for _, ds := range daemonSets {
-			clientset.Extensions().DaemonSets(ds.Namespace).Delete(ds.Name, &api.DeleteOptions{})
-		}
+		var zero int64 = 0
 		clientset.Namespaces().Delete(ns.Name, &api.DeleteOptions{})
-
-		ipnodes, err := ext.IPNodes().List(api.ListOptions{})
-		Expect(err).NotTo(HaveOccurred())
-		for _, item := range ipnodes.Items {
-			ext.IPNodes().Delete(item.Metadata.Name, &api.DeleteOptions{})
+		for _, ds := range daemonSets {
+			clientset.Extensions().DaemonSets(ds.Namespace).Delete(ds.Name, &api.DeleteOptions{
+				GracePeriodSeconds: &zero})
 		}
-
-		ipclaims, err := ext.IPClaims().List(api.ListOptions{})
-		Expect(err).NotTo(HaveOccurred())
-		for _, item := range ipclaims.Items {
-			ext.IPClaims().Delete(item.Metadata.Name, &api.DeleteOptions{})
-		}
-
-		ipclaimpools, err := ext.IPClaimPools().List(api.ListOptions{})
-		Expect(err).NotTo(HaveOccurred())
-		for _, item := range ipclaimpools.Items {
-			ext.IPClaimPools().Delete(item.Metadata.Name, &api.DeleteOptions{})
-		}
+		By("waiting until all pods will be removed")
+		Eventually(func() error {
+			podList, _ := clientset.Core().Pods(ns.Name).List(api.ListOptions{LabelSelector: labels.Everything()})
+			if len(podList.Items) == 0 {
+				return nil
+			}
+			for _, pod := range podList.Items {
+				clientset.Core().Pods(pod.Namespace).Delete(pod.Name, &api.DeleteOptions{
+					GracePeriodSeconds: &zero,
+				})
+			}
+			return fmt.Errorf("Some pods are still running")
+		}, 30*time.Second, 2*time.Second).Should(BeNil())
+		By("waiting until namespace will be terminated")
+		Eventually(func() error {
+			clientset.Namespaces().Delete(ns.Name, &api.DeleteOptions{})
+			_, err := clientset.Namespaces().Get(ns.Name)
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			if err == nil {
+				return fmt.Errorf("Namespace %v is still not removed", ns.Name)
+			}
+			return err
+		}, 30*time.Second, 1*time.Second)
+		By("removing ipnodes")
+		eventuallyWrapper(func() (bool, error) {
+			ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+			if err != nil {
+				return false, err
+			}
+			if len(ipnodes.Items) == 0 {
+				return true, nil
+			}
+			for _, item := range ipnodes.Items {
+				err := ext.IPNodes().Delete(item.Metadata.Name, &api.DeleteOptions{GracePeriodSeconds: &zero})
+				if err != nil {
+					return false, err
+				}
+			}
+			return false, nil
+		})
+		By("removing ipclaims")
+		eventuallyWrapper(func() (bool, error) {
+			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+			if err != nil {
+				return false, err
+			}
+			if len(ipclaims.Items) == 0 {
+				return true, nil
+			}
+			for _, item := range ipclaims.Items {
+				err := ext.IPClaims().Delete(item.Metadata.Name, &api.DeleteOptions{GracePeriodSeconds: &zero})
+				if err != nil {
+					return false, err
+				}
+			}
+			return false, nil
+		})
+		By("removing ipclaim pools")
+		eventuallyWrapper(func() (bool, error) {
+			ipclaimpools, err := ext.IPClaimPools().List(api.ListOptions{})
+			if err != nil {
+				return false, err
+			}
+			for _, item := range ipclaimpools.Items {
+				err := ext.IPClaimPools().Delete(item.Metadata.Name, &api.DeleteOptions{GracePeriodSeconds: &zero})
+				if err != nil {
+					return false, err
+				}
+			}
+			return true, nil
+		})
 	})
 
 	It("Scheduler will correctly handle creation/deletion of ipclaims based on externalips [Native]", func() {
 		By("deploying scheduler pod")
 		pod := newPod(
 			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
-			[]string{"ipmanager", "s", "--mask=24", "--logtostderr", "--v=10"}, nil, false, false)
+			[]string{"ipmanager", "s", "--mask=24", "--logtostderr", "--v=5"}, nil, false, false)
 		_, err := clientset.Core().Pods(ns.Name).Create(pod)
 		Expect(err).NotTo(HaveOccurred())
+
+		By("waiting until claims will be listable")
+		Eventually(func() error {
+			_, err := ext.IPClaims().List(api.ListOptions{})
+			return err
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
 
 		By("deploying mock service with couple of external ips")
 		svcPorts := []v1.ServicePort{{Protocol: v1.ProtocolTCP, Port: 9999, TargetPort: intstr.FromInt(9999)}}
@@ -200,8 +276,8 @@ var _ = Describe("Third party objects", func() {
 			if err != nil {
 				return err
 			}
-			if len(ipclaims.Items) >= 2 {
-				return fmt.Errorf("Expected to see atleast 2 ipclaims, instead %v", ipclaims.Items)
+			if len(ipclaims.Items) != 2 {
+				return fmt.Errorf("Expected to see 2 ipclaims, instead %v", ipclaims.Items)
 			}
 			return nil
 		}, 30*time.Second, 2*time.Second).Should(BeNil())
@@ -264,6 +340,7 @@ var _ = Describe("Third party objects", func() {
 	})
 
 	It("Controller will add ips assigned by ipclaim [Native]", func() {
+		_, network, _ = net.ParseCIDR("10.10.0.0/24")
 		By("Deploying controller with custom hostname")
 		pod := newPod(
 			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
@@ -301,7 +378,6 @@ var _ = Describe("Third party objects", func() {
 		Expect(len(ipclaims.Items)).To(BeNumerically("==", 1))
 
 		By("verifying that cidr provided in ip claim was assigned")
-		_, network, err := net.ParseCIDR("10.10.0.0/24")
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func() error {
 			if ips := getManagedIps(clientset, *pod, network, "eth0"); len(ips) == 1 {
@@ -313,6 +389,7 @@ var _ = Describe("Third party objects", func() {
 	})
 
 	It("Controller will resync ips removed by hand [Native]", func() {
+		_, network, _ = net.ParseCIDR("10.101.0.0/24")
 		By("Deploying controller with resync interval 1s")
 		pod := newPod(
 			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
@@ -335,7 +412,6 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("verifying that cidr provided in ip claim was assigned")
-		_, network, err := net.ParseCIDR("10.101.0.0/24")
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func() error {
 			if ips := getManagedIps(clientset, *pod, network, "eth0"); len(ips) == 1 {
@@ -390,7 +466,7 @@ var _ = Describe("Third party objects", func() {
 		By("deploying nginx pod and service with multiple external ips")
 		nginxName := "nginx"
 		var nginxPort int32 = 2288
-		_, network, err := net.ParseCIDR("10.107.10.0/24")
+		_, network, _ = net.ParseCIDR("10.107.10.0/24")
 		Expect(err).NotTo(HaveOccurred())
 		externalIPs := []string{"10.107.10.2", "10.107.10.3", "10.107.10.4", "10.107.10.5"}
 		addrToClear = append(addrToClear, externalIPs...)
@@ -422,7 +498,7 @@ var _ = Describe("Third party objects", func() {
 			for ext_i := range externalIPs {
 				if neigh[arp_i].IP.String() == externalIPs[ext_i] {
 					macs[neigh[arp_i].HardwareAddr.String()] = true
-					ips_count ++
+					ips_count++
 					break
 				}
 			}
@@ -447,20 +523,25 @@ var _ = Describe("Third party objects", func() {
 		By("verifying that all IPs point to one MACs in ARP table")
 		neigh, err = netlink.NeighList(0, 0)
 		Expect(err).NotTo(HaveOccurred())
-		macs = map[string]bool{}
-		ips_count = 0
-		for arp_i := range neigh {
-			for ext_i := range externalIPs {
-				if neigh[arp_i].IP.String() == externalIPs[ext_i] {
-					macs[neigh[arp_i].HardwareAddr.String()] = true
-					ips_count ++
-					break
+
+		Eventually(func() error {
+			macs = map[string]bool{}
+			ips_count = 0
+			for arp_i := range neigh {
+				for ext_i := range externalIPs {
+					if neigh[arp_i].IP.String() == externalIPs[ext_i] {
+						testutils.Logf("MAC for IP %v - %v\n", externalIPs[ext_i], neigh[arp_i].HardwareAddr.String())
+						macs[neigh[arp_i].HardwareAddr.String()] = true
+						ips_count++
+						break
+					}
 				}
 			}
-		}
-		Expect(ips_count).To(BeNumerically("==", len(externalIPs)))
-		Expect(len(macs)).To(BeNumerically("==", 1))
-
+			if ips_count == len(externalIPs) && len(macs) == 1 {
+				return nil
+			}
+			return fmt.Errorf("Not all ips were found in arp table or they were assigned to multiple MACs. IPs count %v, MACs %v", ips_count, macs)
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
 		By("bring back controller and verify that ips are purged")
 		rst, _, err = testutils.ExecInPod(clientset, dsPods[0], "killall", "-18", processName)
 		Expect(err).NotTo(HaveOccurred())
@@ -489,7 +570,7 @@ var _ = Describe("Third party objects", func() {
 		processName := "ipmanager"
 		By("deploying claim scheduler pod")
 		pod := newPod(
-			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			"scheduller", "scheduller", "mirantis/k8s-externalipcontroller",
 			[]string{processName, "s", "--mask=24", "--logtostderr", "--v=5"}, nil, false, false)
 		_, err := clientset.Core().Pods(ns.Name).Create(pod)
 		Expect(err).NotTo(HaveOccurred())
@@ -517,18 +598,21 @@ var _ = Describe("Third party objects", func() {
 		By("deploying nginx pod and service with multiple external ips")
 		nginxName := "nginx"
 		var nginxPort int32 = 2288
-		_, network, err := net.ParseCIDR("10.107.10.0/24")
+		_, network, _ = net.ParseCIDR("10.109.10.0/24")
 		Expect(err).NotTo(HaveOccurred())
-		externalIPs := []string{"10.107.10.7", "10.107.10.8"}
+		externalIPs := []string{"10.109.10.7", "10.109.10.8", "10.109.10.6", "10.109.10.5"}
 		addrToClear = append(addrToClear, externalIPs...)
 		deployNginxPodAndService(nginxName, nginxPort, clientset, ns, externalIPs)
 
 		By("assigning ip from external ip pool to a node where test is running")
-		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.107.10.10/24")).Should(BeNil())
+		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.109.10.10/24")).Should(BeNil())
+
+		By("verifying that nginx service reachable using any externalIP")
+		verifyServiceReachable(nginxPort, externalIPs...)
 
 		By("verifying that ips are distributed among all daemon set pods")
 		dsPods := getPodsByLabels(clientset, ns, ipcontrollerLabels)
-		Expect(len(dsPods)).To(BeNumerically(">", 1))
+		Expect(len(dsPods)).To(BeNumerically("==", 2))
 		var totalCount int
 		for i := range dsPods {
 			managedIPs := getManagedIps(clientset, dsPods[i], network, "docker0")
@@ -555,9 +639,21 @@ var _ = Describe("Third party objects", func() {
 
 		By("waiting until only single pod will be running")
 		Eventually(func() error {
-			dsPods := getPodsByLabels(clientset, ns, ipcontrollerLabels)
-			if len(dsPods) != 1 {
+			newPods := getPodsByLabels(clientset, ns, ipcontrollerLabels)
+			testutils.Logf("Pods %v\n", newPods)
+			if len(newPods) != 1 {
 				return fmt.Errorf("Unexpected length of pods %v", len(dsPods))
+			}
+
+			newPodName := newPods[0].Name
+			for _, prevPod := range dsPods {
+				if prevPod.Name == newPodName {
+					return fmt.Errorf("Container wasn't recreated yet")
+				}
+			}
+
+			if newPods[0].Status.Phase != v1.PodRunning {
+				return fmt.Errorf("New pod is not running yet")
 			}
 			return nil
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
@@ -638,7 +734,7 @@ var _ = Describe("Third party objects", func() {
 		By("deploying nginx pod and service with multiple external ips")
 		nginxName := "nginx"
 		var nginxPort int32 = 2288
-		_, network, err := net.ParseCIDR("10.107.10.0/24")
+		_, network, _ = net.ParseCIDR("10.107.10.0/24")
 		Expect(err).NotTo(HaveOccurred())
 		externalIPs := []string{"10.107.10.7", "10.107.10.8"}
 		addrToClear = append(addrToClear, externalIPs...)
@@ -826,4 +922,8 @@ func verifyEventsCount(watcher watch.Interface, expectedCount int) {
 		}
 		return fmt.Errorf("Channel closed and didnt receive any events")
 	}, 10*time.Second, 1*time.Second).Should(BeNil())
+}
+
+func eventuallyWrapper(f wait.ConditionFunc) {
+	wait.PollImmediate(1*time.Second, 30*time.Second, f)
 }
