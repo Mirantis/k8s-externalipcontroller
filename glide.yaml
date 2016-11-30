@@ -29,3 +29,5 @@ import:
   - pkg/client/unversioned/remotecommand
   - pkg/util/flag
 - package: github.com/spf13/cobra
+- package: github.com/google/gopacket
+  version: v1.1.12

@@ -51,12 +51,14 @@ var _ = Describe("Network [sudo]", func() {
 		link := &netlink.Dummy{netlink.LinkAttrs{Name: linkNames[0]}}
 		By("adding dummy link with name " + link.Attrs().Name)
 		Expect(netlink.LinkAdd(link)).NotTo(HaveOccurred())
+		By("getting link up")
+		Expect(netlink.LinkSetUp(link)).NotTo(HaveOccurred())
 		cidrToAssign := []string{"10.10.0.2/24", "10.10.0.2/24", "10.10.0.3/24"}
 		for _, cidr := range cidrToAssign {
 			err := netutils.EnsureIPAssigned(link.Attrs().Name, cidr)
 			Expect(err).NotTo(HaveOccurred())
 		}
-		addrList, err := netlink.AddrList(link, netlink.FAMILY_ALL)
+		addrList, err := netlink.AddrList(link, netlink.FAMILY_V4)
 		Expect(err).NotTo(HaveOccurred())
 		ipSet := map[string]bool{}
 		expectedIpSet := map[string]bool{"10.10.0.2/24": true, "10.10.0.3/24": true}
