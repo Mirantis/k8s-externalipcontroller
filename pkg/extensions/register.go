@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"k8s.io/client-go/1.5/kubernetes"
+	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/apis/extensions/v1beta1"
 )
 
@@ -30,6 +31,13 @@ func EnsureThirdPartyResourcesExist(clientset *kubernetes.Clientset) error {
 	}
 
 	return nil
+}
+
+func RemoveThirdPartyResources(clientset *kubernetes.Clientset) {
+	for _, name := range []string{"ip-node", "ip-claim", "ip-claim-pool"} {
+		fullName := strings.Join([]string{name, GroupName}, ".")
+		clientset.Extensions().ThirdPartyResources().Delete(fullName, &api.DeleteOptions{})
+	}
 }
 
 func ensureThirdPartyResource(clientset *kubernetes.Clientset, name string) error {
