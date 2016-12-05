@@ -16,6 +16,9 @@ package app
 import (
 	"time"
 
+	"k8s.io/kubernetes/pkg/apis/componentconfig"
+	"k8s.io/kubernetes/pkg/client/leaderelection"
+
 	"github.com/spf13/pflag"
 )
 
@@ -25,6 +28,8 @@ type options struct {
 	Mask           string
 	Hostname       string
 	ResyncInterval time.Duration
+
+	LeaderElection componentconfig.LeaderElectionConfiguration
 }
 
 var AppOpts = options{}
@@ -39,4 +44,6 @@ func (o *options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&o.Kubeconfig, "kubeconfig", "", "kubeconfig to use with kubernetes client")
 	fs.StringVar(&o.Hostname, "hostname", "", "We will use os.Hostname if none provided")
 	fs.DurationVar(&o.ResyncInterval, "resync", 20*time.Second, "Time to resync state for all ips")
+	o.LeaderElection = componentconfig.LeaderElectionConfiguration{}
+	leaderelection.BindFlags(&o.LeaderElection, fs)
 }
