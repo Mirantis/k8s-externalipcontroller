@@ -94,11 +94,14 @@ type ipClaimScheduler struct {
 }
 
 func (s *ipClaimScheduler) Run(stop chan struct{}) {
-	glog.V(0).Infof("Starting scheduler sub-goroutines")
+	glog.V(3).Infof("Starting monitor goroutine.")
+	go s.monitorIPNodes(stop, time.Tick(s.monitorPeriod))
+	// lets give controllers some time to register themself after scheduler restart
+	time.Sleep(s.monitorPeriod * 2)
+	glog.V(3).Infof("Starting all other worker goroutines.")
 	go s.worker()
 	go s.serviceWatcher(stop)
 	go s.claimWatcher(stop)
-	go s.monitorIPNodes(stop, time.Tick(s.monitorPeriod))
 	<-stop
 	s.queue.Close()
 }
