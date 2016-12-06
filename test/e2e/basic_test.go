@@ -517,10 +517,10 @@ var _ = Describe("Third party objects", func() {
 	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [Native]", func() {
 		processName := "ipmanager"
 		By("deploying claim scheduler pod")
-		pod := newPod(
-			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+		scheduler := newPod(
+			"externalipscheduler", "externalipcontroller", "mirantis/k8s-externalipcontroller",
 			[]string{processName, "s", "--mask=24", "--logtostderr", "--v=5"}, nil, false, false)
-		_, err := clientset.Core().Pods(ns.Name).Create(pod)
+		_, err := clientset.Core().Pods(ns.Name).Create(scheduler)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("deploying claim controller daemon set")
@@ -568,6 +568,19 @@ var _ = Describe("Third party objects", func() {
 			totalCount += len(managedIPs)
 		}
 		Expect(totalCount).To(BeNumerically("==", len(externalIPs)))
+
+		By("restarting scheduler and verifying that claim allocation will stay the same")
+		allocatedClaims := getAllocatedClaims(ext)
+		var zero int64 = 0
+		err = clientset.Core().Pods(ns.Name).Delete(scheduler.Name, &api.DeleteOptions{
+			GracePeriodSeconds: &zero,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		_, err = clientset.Core().Pods(ns.Name).Create(scheduler)
+		Expect(err).NotTo(HaveOccurred())
+		Consistently(func() map[string]string {
+			return getAllocatedClaims(ext)
+		}, 15*time.Second, 1*time.Second).Should(BeEquivalentTo(allocatedClaims))
 
 		By("verifying that all IPs are spread across two MACs in ARP table")
 		neigh, err := netlink.NeighList(0, 0)
@@ -992,4 +1005,14 @@ func verifyEventsCount(watcher watch.Interface, expectedCount int) {
 
 func eventuallyWrapper(f wait.ConditionFunc) {
 	wait.PollImmediate(1*time.Second, 30*time.Second, f)
+}
+
+func getAllocatedClaims(ext extensions.ExtensionsClientset) map[string]string {
+	allocatedClaims := map[string]string{}
+	ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+	Expect(err).NotTo(HaveOccurred())
+	for _, ipclaim := range ipclaims.Items {
+		allocatedClaims[ipclaim.Spec.Cidr] = ipclaim.Spec.NodeName
+	}
+	return allocatedClaims
 }

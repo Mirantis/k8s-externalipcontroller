@@ -97,7 +97,8 @@ func (s *ipClaimScheduler) Run(stop chan struct{}) {
 	glog.V(3).Infof("Starting monitor goroutine.")
 	go s.monitorIPNodes(stop, time.Tick(s.monitorPeriod))
 	// lets give controllers some time to register themself after scheduler restart
-	time.Sleep(s.monitorPeriod * 2)
+	// TODO(dshulyak) consider to run monitor both for leaders/non-leaders
+	time.Sleep(s.monitorPeriod)
 	glog.V(3).Infof("Starting all other worker goroutines.")
 	go s.worker()
 	go s.serviceWatcher(stop)
