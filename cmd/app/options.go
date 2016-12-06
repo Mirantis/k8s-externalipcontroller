@@ -44,6 +44,6 @@ func (o *options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&o.Kubeconfig, "kubeconfig", "", "kubeconfig to use with kubernetes client")
 	fs.StringVar(&o.Hostname, "hostname", "", "We will use os.Hostname if none provided")
 	fs.DurationVar(&o.ResyncInterval, "resync", 20*time.Second, "Time to resync state for all ips")
-	o.LeaderElection = componentconfig.LeaderElectionConfiguration{}
+	o.LeaderElection = leaderelection.DefaultLeaderElectionConfiguration()
 	leaderelection.BindFlags(&o.LeaderElection, fs)
 }

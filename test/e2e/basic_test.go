@@ -199,7 +199,7 @@ var _ = Describe("Third party objects", func() {
 				return fmt.Errorf("Namespace %v is still not removed", ns.Name)
 			}
 			return err
-		}, 30*time.Second, 1*time.Second)
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
 		By("removing ipnodes")
 		eventuallyWrapper(func() (bool, error) {
 			ipnodes, err := ext.IPNodes().List(api.ListOptions{})
@@ -281,6 +281,86 @@ var _ = Describe("Third party objects", func() {
 			}
 			return nil
 		}, 30*time.Second, 2*time.Second).Should(BeNil())
+	})
+
+	It("Scheduler in leaderelection mode will tolerate failure of single scheduler", func() {
+		By("deploying 2 replicas of scheduler")
+		processName := "ipmanager"
+		cmd := []string{processName, "s", "--logtostderr", "--v=5", "--leader-elect=true", "--mask=24"}
+		dep := newDeployment(
+			"schedulerdeployment", 2, ipcontrollerLabels,
+			"mirantis/k8s-externalipcontroller", "externalipcontroller",
+			[]string{"sh", "-c", strings.Join(cmd, " ")},
+		)
+		_, err := clientset.Extensions().Deployments(ns.Name).Create(dep)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("create service and validate that claim for this service is created")
+		svcPorts := []v1.ServicePort{{Protocol: v1.ProtocolTCP, Port: 9999, TargetPort: intstr.FromInt(9999)}}
+		svc := newService("any", map[string]string{}, svcPorts, []string{"111.10.0.2"})
+		svc, err = clientset.Core().Services(ns.Name).Create(svc)
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() error {
+			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+			if err != nil {
+				return err
+			}
+			if len(ipclaims.Items) != 1 {
+				return fmt.Errorf("Expected to see 1 ipclaims, instead %v", ipclaims.Items)
+			}
+			return nil
+		}, 30*time.Second, 2*time.Second).Should(BeNil())
+
+		pods := getPodsByLabels(clientset, ns, ipcontrollerLabels)
+		Expect(len(pods)).To(BeNumerically(">", 1))
+		By("making halt 1st replica and create service with new external ip")
+		rst, _, err := testutils.ExecInPod(clientset, pods[0], "killall", "-19", processName)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rst).To(BeEmpty())
+
+		anotherSvc := newService("another", map[string]string{}, svcPorts, []string{"111.10.0.3"})
+		anotherSvc, err = clientset.Core().Services(ns.Name).Create(anotherSvc)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying that there is 2 ipclaims")
+		Eventually(func() error {
+			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+			if err != nil {
+				return err
+			}
+			if len(ipclaims.Items) != 2 {
+				return fmt.Errorf("Expected to see 2 ipclaims, instead %v", ipclaims.Items)
+			}
+			return nil
+		}, 30*time.Second, 2*time.Second).Should(BeNil())
+
+		var zero int64 = 0
+		err = clientset.Core().Pods(ns.Name).Delete(pods[0].Name, &api.DeleteOptions{
+			GracePeriodSeconds: &zero,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("make halt 2nd replica and create one more ip")
+		rst, _, err = testutils.ExecInPod(clientset, pods[1], "killall", "-19", processName)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rst).To(BeEmpty())
+
+		thirdSvc := newService("third", map[string]string{}, svcPorts, []string{"111.10.0.4"})
+		thirdSvc, err = clientset.Core().Services(ns.Name).Create(thirdSvc)
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() error {
+			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+			if err != nil {
+				return err
+			}
+			if len(ipclaims.Items) != 3 {
+				return fmt.Errorf("Expected to see 3 ipclaims, instead %v", ipclaims.Items)
+			}
+			return nil
+		}, 30*time.Second, 2*time.Second).Should(BeNil())
+
 	})
 
 	It("Create IP claim pool resource via its client and try to retrieve it from k8s api back", func() {
@@ -734,9 +814,9 @@ var _ = Describe("Third party objects", func() {
 		By("deploying nginx pod and service with multiple external ips")
 		nginxName := "nginx"
 		var nginxPort int32 = 2288
-		_, network, _ = net.ParseCIDR("10.107.10.0/24")
+		_, network, _ = net.ParseCIDR("10.111.10.0/24")
 		Expect(err).NotTo(HaveOccurred())
-		externalIPs := []string{"10.107.10.7", "10.107.10.8"}
+		externalIPs := []string{"10.111.10.7", "10.111.10.8"}
 		addrToClear = append(addrToClear, externalIPs...)
 		deployNginxPodAndService(nginxName, nginxPort, clientset, ns, externalIPs)
 
@@ -798,6 +878,21 @@ func newDaemonSet(dsName, containerName, imageName string, cmd []string, labels 
 
 }
 
+func newDeployment(deploymentName string, replicas int32, podLabels map[string]string, imageName string, image string, cmd []string) *v1beta1.Deployment {
+	return &v1beta1.Deployment{
+		ObjectMeta: v1.ObjectMeta{Name: deploymentName},
+		Spec: v1beta1.DeploymentSpec{
+			Replicas: &replicas,
+			Template: v1.PodTemplateSpec{
+				ObjectMeta: v1.ObjectMeta{
+					Labels: podLabels,
+				},
+				Spec: newPrivilegedPodSpec(image, imageName, cmd, false, false),
+			},
+		},
+	}
+}
+
 func newService(serviceName string, labels map[string]string, ports []v1.ServicePort, externalIPs []string) *v1.Service {
 	return &v1.Service{
 		ObjectMeta: v1.ObjectMeta{
@@ -810,35 +905,6 @@ func newService(serviceName string, labels map[string]string, ports []v1.Service
 			ExternalIPs: externalIPs,
 		},
 	}
-}
-
-func deployEtcdPodAndService(serviceName string, servicePort int32, clientset *kubernetes.Clientset, ns *v1.Namespace) string {
-	etcdLabels := map[string]string{"app": "etcd"}
-	cmd := []string{
-		"/usr/local/bin/etcd",
-		"--listen-client-urls=http://0.0.0.0:4001",
-		"--advertise-client-urls=http://0.0.0.0:4001"}
-	pod := newPod("etcd", "etcd", "gcr.io/google_containers/etcd-amd64:3.0.4", cmd, etcdLabels, false, false)
-	pod, err := clientset.Core().Pods(ns.Name).Create(pod)
-	Expect(err).NotTo(HaveOccurred())
-	testutils.WaitForReady(clientset, pod)
-	svcPorts := []v1.ServicePort{{Protocol: v1.ProtocolTCP, Port: servicePort, TargetPort: intstr.FromInt(4001)}}
-	svc := newService(serviceName, etcdLabels, svcPorts, nil)
-	_, err = clientset.Core().Services(ns.Name).Create(svc)
-	Expect(err).NotTo(HaveOccurred())
-	var clusterIP string
-	Eventually(func() error {
-		svc, err := clientset.Core().Services(ns.Name).Get(svc.Name)
-		if err != nil {
-			return err
-		}
-		if svc.Spec.ClusterIP == "" {
-			return fmt.Errorf("cluster ip for service %v is not set", svc.Name)
-		}
-		clusterIP = svc.Spec.ClusterIP
-		return nil
-	}, 10*time.Second, 1*time.Second).Should(BeNil())
-	return clusterIP
 }
 
 func deployNginxPodAndService(serviceName string, servicePort int32, clientset *kubernetes.Clientset, ns *v1.Namespace, externalIPs []string) {

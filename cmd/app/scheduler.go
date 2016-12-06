@@ -87,6 +87,7 @@ func InitScheduler() error {
 		glog.Fatalf("Cannot get hostname %v", err)
 	}
 
+	glog.V(0).Infof("Starting scheduler in leader election mode with id=%v", id)
 	kubernetesConfig, err := restclient.InClusterConfig()
 	if err != nil {
 		glog.Fatalf("Error creating config %v", err)
