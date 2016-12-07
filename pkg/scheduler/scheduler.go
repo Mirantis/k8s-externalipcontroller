@@ -94,6 +94,7 @@ type ipClaimScheduler struct {
 }
 
 func (s *ipClaimScheduler) Run(stop chan struct{}) {
+	glog.V(0).Infof("Starting scheduler sub-goroutines")
 	go s.worker()
 	go s.serviceWatcher(stop)
 	go s.claimWatcher(stop)
@@ -113,7 +114,6 @@ func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 			AddFunc: func(obj interface{}) {
 				svc := obj.(*v1.Service)
 				for _, ip := range svc.Spec.ExternalIPs {
-					glog.V(3).Infof("Trying to create ipclaim with IP %v and MASK %v", ip, s.DefaultMask)
 					err := tryCreateIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
 					if err != nil {
 						glog.Errorf("Unable to create ip claim %v", err)
@@ -346,6 +346,7 @@ func (s *ipClaimScheduler) isLive(name string) bool {
 }
 
 func tryCreateIPClaim(ext extensions.ExtensionsClientset, ip, mask string) error {
+	glog.V(3).Infof("Trying to create ipclaim with IP %v and MASK %v", ip, mask)
 	ipParts := strings.Split(ip, ".")
 	key := strings.Join([]string{strings.Join(ipParts, "-"), mask}, "-")
 	cidr := strings.Join([]string{ip, mask}, "/")

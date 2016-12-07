@@ -26,8 +26,14 @@ import:
 - package: k8s.io/kubernetes
   version: v1.6.0-alpha.0
   subpackages:
+  - pkg/client/leaderelection
+  - pkg/apis/componentconfig
   - pkg/client/unversioned/remotecommand
   - pkg/util/flag
+  - pkg/client/record
+  - pkg/client/restclient
+  - pkg/client/clientset_generated/internalclientset
+  - pkg/client/leaderelection/resourcelock
 - package: github.com/spf13/cobra
 - package: github.com/google/gopacket
   version: v1.1.12
