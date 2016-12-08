@@ -57,7 +57,7 @@ func TestIpClaimPoolAvailableIPFromCIDR(t *testing.T) {
 	ClaimPool := &IpClaimPool{
 		Spec: IpClaimPoolSpec{
 			CIDR:      cidr,
-			Range:     nil,
+			Ranges:    nil,
 			Allocated: allocated,
 		},
 	}
@@ -72,7 +72,7 @@ func TestIpClaimPoolAvailableIPFromCIDR(t *testing.T) {
 
 func TestIpClaimPoolAvailableIPFromRange(t *testing.T) {
 	cidr := "192.168.16.248/29"
-	IPrange := []string{"192.168.16.250", "192.168.16.252"}
+	IPranges := [][]string{[]string{"192.168.16.250", "192.168.16.252"}}
 
 	allocated := map[string]string{
 		"192.168.16.250": "test-claim-250",
@@ -84,7 +84,7 @@ func TestIpClaimPoolAvailableIPFromRange(t *testing.T) {
 	ClaimPool := &IpClaimPool{
 		Spec: IpClaimPoolSpec{
 			CIDR:      cidr,
-			Range:     IPrange,
+			Ranges:    IPranges,
 			Allocated: allocated,
 		},
 	}
@@ -92,6 +92,36 @@ func TestIpClaimPoolAvailableIPFromRange(t *testing.T) {
 	checkFreeIP(ClaimPool, expectedIP, t)
 
 	allocated["192.168.16.252"] = "test-claim-252"
+
+	checkNoFreeIPError(ClaimPool, t)
+}
+
+func TestIpClaimPoolRangesProperlyProcessed(t *testing.T) {
+	cidr := "192.168.16.248/29"
+	IPranges := [][]string{
+		[]string{"192.168.16.249", "192.168.16.250"},
+		[]string{"192.168.16.252", "192.168.16.253"},
+	}
+
+	allocated := map[string]string{
+		"192.168.16.249": "test-claim-249",
+		"192.168.16.250": "test-claim-250",
+		"192.168.16.252": "test-claim-252",
+	}
+
+	expectedIP := "192.168.16.253"
+
+	ClaimPool := &IpClaimPool{
+		Spec: IpClaimPoolSpec{
+			CIDR:      cidr,
+			Ranges:    IPranges,
+			Allocated: allocated,
+		},
+	}
+
+	checkFreeIP(ClaimPool, expectedIP, t)
+
+	allocated["192.168.16.253"] = "test-claim-253"
 
 	checkNoFreeIPError(ClaimPool, t)
 }

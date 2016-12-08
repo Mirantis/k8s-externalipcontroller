@@ -140,7 +140,7 @@ type IpClaimPool struct {
 
 type IpClaimPoolSpec struct {
 	CIDR      string            `json:"cidr" protobuf:"bytes,10,opt,name=cidr"`
-	Range     []string          `json:"range,omitempty" protobuf:"bytes,5,opt,name=range"`
+	Ranges    [][]string        `json:"ranges,omitempty" protobuf:"bytes,5,opt,name=ranges"`
 	Allocated map[string]string `json:"allocated,omitempty" protobuf:"bytes,2,opt,name=allocated"`
 }
 
@@ -161,27 +161,40 @@ func (p *IpClaimPool) AvailableIP() (availableIP string, err error) {
 
 	var dropOffIP net.IP
 
-	//in case 'Range' is not set for the pool assume ranges of the
+	ranges := [][]net.IP{}
+
+	//in case 'Ranges' is not set for the pool assume ranges of the
 	//network itself
-	if p.Spec.Range != nil {
-		ip = net.ParseIP(p.Spec.Range[0])
-		dropOffIP = net.ParseIP(p.Spec.Range[len(p.Spec.Range)-1])
-		netutils.IPIncrement(dropOffIP)
+	if p.Spec.Ranges != nil {
+		for _, r := range p.Spec.Ranges {
+			ip = net.ParseIP(r[0])
+			dropOffIP = net.ParseIP(r[len(r)-1])
+			netutils.IPIncrement(dropOffIP)
+
+			ranges = append(ranges, []net.IP{ip, dropOffIP})
+		}
 	} else {
 		//network address is not usable
 		netutils.IPIncrement(ip)
+		ranges = [][]net.IP{{ip, dropOffIP}}
 	}
 
-	next := make(net.IP, len(ip))
-	copy(next, ip)
-	netutils.IPIncrement(next)
+	for _, r := range ranges {
+		curAddr := r[0]
+		nextAddr := make(net.IP, len(curAddr))
+		copy(nextAddr, curAddr)
+		netutils.IPIncrement(nextAddr)
 
-	for network.Contains(ip) && network.Contains(next) && ip.Equal(dropOffIP) == false {
-		if _, exists := p.Spec.Allocated[ip.String()]; !exists {
-			return ip.String(), nil
+		firstOut := r[len(r)-1]
+
+		for network.Contains(curAddr) && network.Contains(nextAddr) && curAddr.Equal(firstOut) == false {
+			if _, exists := p.Spec.Allocated[curAddr.String()]; !exists {
+				return curAddr.String(), nil
+			}
+			netutils.IPIncrement(curAddr)
+			netutils.IPIncrement(nextAddr)
+
 		}
-		netutils.IPIncrement(ip)
-		netutils.IPIncrement(next)
 	}
 
 	return "", errors.New("There is no free IP left in the pool")

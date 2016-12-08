@@ -374,12 +374,12 @@ var _ = Describe("Third party objects", func() {
 		By("create IP pool")
 		poolCIDR := "192.168.16.248/29"
 		allocatedIP := "192.168.16.250"
-		poolRange := []string{"192.168.16.250", "192.168.16.252"}
+		poolRanges := [][]string{[]string{"192.168.16.250", "192.168.16.252"}}
 		pool := &extensions.IpClaimPool{
 			Metadata: api.ObjectMeta{Name: "test-pool"},
 			Spec: extensions.IpClaimPoolSpec{
-				CIDR:  poolCIDR,
-				Range: poolRange,
+				CIDR:   poolCIDR,
+				Ranges: poolRanges,
 			},
 		}
 
@@ -425,13 +425,13 @@ var _ = Describe("Third party objects", func() {
 		err = extensions.EnsureThirdPartyResourcesExist(clientset)
 		Expect(err).NotTo(HaveOccurred())
 
-		eRange := []string{"10.20.0.10/24", "10.20.0.20/24"}
+		eRanges := [][]string{[]string{"10.20.0.10/24", "10.20.0.20/24"}}
 		eAllocated := map[string]string{"10.20.0.11/24": "testclaim"}
 		ipclaimpool := &extensions.IpClaimPool{
 			Metadata: api.ObjectMeta{Name: "testclaimpool"},
 			Spec: extensions.IpClaimPoolSpec{
 				CIDR:      "10.20.0.0/24",
-				Range:     eRange,
+				Ranges:    eRanges,
 				Allocated: eAllocated,
 			},
 		}
@@ -442,7 +442,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(created.Spec.CIDR).To(Equal("10.20.0.0/24"))
 		Expect(created.Metadata.Name).To(Equal("testclaimpool"))
-		Expect(created.Spec.Range).To(Equal(eRange))
+		Expect(created.Spec.Ranges).To(Equal(eRanges))
 		Expect(created.Spec.Allocated).To(Equal(eAllocated))
 
 		ipclaimpool.Metadata.Annotations = map[string]string{"key": "value"}

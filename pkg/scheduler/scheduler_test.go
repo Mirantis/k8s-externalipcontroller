@@ -91,12 +91,12 @@ func TestAutoAllocationForServices(t *testing.T) {
 	}
 
 	poolCIDR := "192.168.16.248/29"
-	poolRange := []string{"192.168.16.250", "192.168.16.252"}
+	poolRanges := [][]string{[]string{"192.168.16.250", "192.168.16.252"}}
 	pool := &extensions.IpClaimPool{
 		Metadata: api.ObjectMeta{Name: "test-pool"},
 		Spec: extensions.IpClaimPoolSpec{
-			CIDR:  poolCIDR,
-			Range: poolRange,
+			CIDR:   poolCIDR,
+			Ranges: poolRanges,
 		},
 	}
 	poolList := &extensions.IpClaimPoolList{Items: []extensions.IpClaimPool{*pool}}
@@ -175,12 +175,12 @@ func TestClaimNotCreatedIfExternalIPIsAutoAllocated(t *testing.T) {
 	stop := make(chan struct{})
 
 	poolCIDR := "192.168.16.248/29"
-	poolRange := []string{"192.168.16.250", "192.168.16.252"}
+	poolRanges := [][]string{[]string{"192.168.16.250", "192.168.16.252"}}
 	pool := &extensions.IpClaimPool{
 		Metadata: api.ObjectMeta{Name: "test-pool"},
 		Spec: extensions.IpClaimPoolSpec{
 			CIDR:      poolCIDR,
-			Range:     poolRange,
+			Ranges:    poolRanges,
 			Allocated: map[string]string{"192.168.16.250": "192-168-16-250-29"},
 		},
 	}
