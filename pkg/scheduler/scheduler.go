@@ -120,52 +120,12 @@ func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 			AddFunc: func(obj interface{}) {
 				svc := obj.(*v1.Service)
 
-				if len(svc.Spec.ExternalIPs) != 0 {
-					for _, ip := range svc.Spec.ExternalIPs {
-						//assume claim has been already created for auto allocated IP;
-						//if services are re-added to the cache, (for example, in case
-						//the scheduler is restarted) AddFunc will be called for services
-						//that might have been already processed
-						s.createClaimIfNotAllocated(ip)
-					}
-				} else {
-					if auto := checkAutoAllocation(svc); auto {
-						freeIP, pool, err := getAvailableIPAndPool(s.ExtensionsClientset)
-
-						if err != nil {
-							glog.Errorf("Fail to get free IP from the pools %v", err)
-						}
-						if len(freeIP) != 0 {
-							mask := strings.Split(pool.Spec.CIDR, "/")[1]
-
-							ipclaim := makeIPClaim(freeIP, mask)
-							ipclaim.Metadata.SetLabels(
-								map[string]string{"ip-pool-name": pool.Metadata.Name})
-
-							err := tryCreateIPClaim(s.ExtensionsClientset, ipclaim)
-							if err != nil {
-								glog.Errorf("Unable to create ip claim %v", err)
-							}
-
-							err = updatePoolAllocation(s.ExtensionsClientset, pool, freeIP, ipclaim.Metadata.Name)
-							if err != nil {
-								glog.Errorf("Unable to update IP pool's allocated info %v", err)
-							}
-
-							err = addServiceExternalIP(svc, s.Clientset, freeIP)
-							if err != nil {
-								glog.Errorf("Unable to update ExternalIPs for service. Details: %v", err)
-							}
-						}
-					}
-				}
+				s.processExternalIPs(svc)
 			},
 			UpdateFunc: func(old, cur interface{}) {
 				curSvc := cur.(*v1.Service)
 
-				for _, ip := range curSvc.Spec.ExternalIPs {
-					s.createClaimIfNotAllocated(ip)
-				}
+				s.processExternalIPs(curSvc)
 
 				oldSvc := old.(*v1.Service)
 				s.processOldService(oldSvc)
@@ -180,21 +140,65 @@ func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 	controller.Run(stop)
 }
 
-func (s *ipClaimScheduler) createClaimIfNotAllocated(IP string) {
-	pool, err := getPoolForAllocated(s.ExtensionsClientset, IP)
-	if err != nil {
-		glog.Errorf("Unable to determine whether ip %v was auto-allocated. Detals: %v", IP, err)
+//we must take into account that missing of data and double processing of
+//service objects might occur (due the way the object cache works); thus
+//auto allocation must be done only in case a service is properly annotated
+//and there is no already auto allocated IP for it
+func (s *ipClaimScheduler) processExternalIPs(svc *v1.Service) {
+	foundAuto := false
+
+	for _, ip := range svc.Spec.ExternalIPs {
+		pool, err := getPoolForAllocated(s.ExtensionsClientset, ip)
+		if err != nil {
+			glog.Errorf(
+				"Unable to determine whether ip %v was auto-allocated. Detals: %v",
+				ip, err,
+			)
+		}
+
+		if pool != nil {
+			foundAuto = true
+			continue
+		}
+
+		err = tryCreateIPClaim(s.ExtensionsClientset, makeIPClaim(ip, s.DefaultMask))
+		if err != nil {
+			glog.Errorf("Unable to create ip claim %v", err)
+		}
 	}
 
-	//if IP is allocated within the pool assume that claim for it
-	//has been already created when a service was created
-	if pool != nil {
-		return
+	if annotated := checkAnnotation(svc); annotated && !foundAuto {
+		s.autoAllocateExternalIP(svc)
 	}
+}
 
-	err = tryCreateIPClaim(s.ExtensionsClientset, makeIPClaim(IP, s.DefaultMask))
+func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service) {
+	freeIP, pool, err := getAvailableIPAndPool(s.ExtensionsClientset)
+
 	if err != nil {
-		glog.Errorf("Unable to create ip claim %v", err)
+		glog.Errorf("Fail to get free IP from the pools %v", err)
+	}
+	if len(freeIP) != 0 {
+		mask := strings.Split(pool.Spec.CIDR, "/")[1]
+
+		ipclaim := makeIPClaim(freeIP, mask)
+		ipclaim.Metadata.SetLabels(
+			map[string]string{"ip-pool-name": pool.Metadata.Name})
+
+		err := tryCreateIPClaim(s.ExtensionsClientset, ipclaim)
+		if err != nil {
+			glog.Errorf("Unable to create ip claim %v", err)
+		}
+
+		err = updatePoolAllocation(s.ExtensionsClientset, pool, freeIP, ipclaim.Metadata.Name)
+		if err != nil {
+			glog.Errorf("Unable to update IP pool's allocated info %v", err)
+		}
+
+		err = addServiceExternalIP(svc, s.Clientset, freeIP)
+		if err != nil {
+			glog.Errorf("Unable to update ExternalIPs for service. Details: %v", err)
+		}
 	}
 }
 
@@ -441,7 +445,7 @@ func (s *ipClaimScheduler) isLive(name string) bool {
 	return ok
 }
 
-func checkAutoAllocation(svc *v1.Service) bool {
+func checkAnnotation(svc *v1.Service) bool {
 	if svc.ObjectMeta.Annotations != nil {
 		if i, exists := svc.ObjectMeta.Annotations["external-ip"]; exists && i == "auto" {
 			return true

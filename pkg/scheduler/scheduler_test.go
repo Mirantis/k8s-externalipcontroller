@@ -140,6 +140,7 @@ func TestAutoAllocationForServices(t *testing.T) {
 
 	changeExternalIPsvc := svc
 	changeExternalIPsvc.Spec.ExternalIPs = []string{"10.20.0.2"}
+	delete(changeExternalIPsvc.ObjectMeta.Annotations, "external-ip")
 	lw.Modify(&changeExternalIPsvc)
 
 	//there should be only 3 calls to Ipclaims at this point:
@@ -218,6 +219,73 @@ func TestClaimNotCreatedIfExternalIPIsAutoAllocated(t *testing.T) {
 	ipclaim := createCall.Arguments[0].(*extensions.IpClaim)
 	assert.Equal(t, "172.16.0.2/24", ipclaim.Spec.Cidr, "Unexpected cidr assigned to node")
 	assert.Equal(t, "172-16-0-2-24", ipclaim.Metadata.Name, "Unexpected name")
+}
+
+func TestAutoAllocatedOnServiceUpdate(t *testing.T) {
+	ext := fclient.NewFakeExtClientset()
+	lw := fcache.NewFakeControllerSource()
+	stop := make(chan struct{})
+
+	poolCIDR := "192.168.16.248/29"
+	poolRanges := [][]string{[]string{"192.168.16.250", "192.168.16.252"}}
+	pool := &extensions.IpClaimPool{
+		Metadata: api.ObjectMeta{Name: "test-pool"},
+		Spec: extensions.IpClaimPoolSpec{
+			CIDR:   poolCIDR,
+			Ranges: poolRanges,
+		},
+	}
+	poolList := &extensions.IpClaimPoolList{Items: []extensions.IpClaimPool{*pool}}
+
+	ext.Ipclaimpools.On("List", mock.Anything).Return(poolList, nil)
+	ext.Ipclaimpools.On("Update", mock.Anything).Return(pool, nil)
+
+	ext.Ipclaims.On("Create", mock.Anything).Return(nil)
+
+	svc := v1.Service{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "need-alloc-svc",
+			Namespace: api.NamespaceDefault,
+		},
+		Spec: v1.ServiceSpec{
+			ExternalIPs: []string{"172.16.0.2"},
+		},
+	}
+
+	fakeClientset := fake.NewSimpleClientset(&v1.ServiceList{Items: []v1.Service{svc}})
+
+	s := ipClaimScheduler{
+		DefaultMask:         "24",
+		serviceSource:       lw,
+		ExtensionsClientset: ext,
+		Clientset:           fakeClientset,
+	}
+
+	go s.serviceWatcher(stop)
+	defer close(stop)
+
+	lw.Add(&svc)
+
+	utils.EventualCondition(t, time.Second*1, func() bool {
+		return assert.ObjectsAreEqual(len(ext.Ipclaims.Calls), 1)
+	}, "Unexpected call count to ipclaims", ext.Ipclaims.Calls)
+
+	annotatedSvc := svc
+	annotatedSvc.ObjectMeta.Annotations = map[string]string{"external-ip": "auto"}
+	lw.Modify(&annotatedSvc)
+
+	//one extra create for 172-16-0-2-24 as the service is double processed
+	utils.EventualCondition(t, time.Second*1, func() bool {
+		return assert.ObjectsAreEqual(len(ext.Ipclaims.Calls), 3)
+	}, "Unexpected call count to ipclaims", ext.Ipclaims.Calls)
+
+	createCall := ext.Ipclaims.Calls[2]
+	ipclaim := createCall.Arguments[0].(*extensions.IpClaim)
+	assert.Equal(t, "192.168.16.250/29", ipclaim.Spec.Cidr, "Unexpected cidr assigned to node")
+	assert.Equal(t, "192-168-16-250-29", ipclaim.Metadata.Name, "Unexpected name")
+
+	updatedSvc, _ := fakeClientset.Core().Services(svc.ObjectMeta.Namespace).Get(svc.ObjectMeta.Name)
+	assert.Contains(t, updatedSvc.Spec.ExternalIPs, "192.168.16.250")
 }
 
 func TestClaimWatcher(t *testing.T) {
