@@ -187,7 +187,7 @@ func (p *IpClaimPool) AvailableIP() (availableIP string, err error) {
 
 		firstOut := r[len(r)-1]
 
-		for network.Contains(curAddr) && network.Contains(nextAddr) && curAddr.Equal(firstOut) == false {
+		for network.Contains(curAddr) && network.Contains(nextAddr) && !curAddr.Equal(firstOut) {
 			if _, exists := p.Spec.Allocated[curAddr.String()]; !exists {
 				return curAddr.String(), nil
 			}

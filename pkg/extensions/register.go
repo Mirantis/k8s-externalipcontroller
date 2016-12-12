@@ -22,10 +22,10 @@ import (
 	"k8s.io/client-go/1.5/pkg/apis/extensions/v1beta1"
 )
 
-func EnsureThirdPartyResourcesExist(clientset *kubernetes.Clientset) error {
+func EnsureThirdPartyResourcesExist(ki kubernetes.Interface) error {
 	resourceNames := []string{"ip-node", "ip-claim", "ip-claim-pool"}
 	for _, resName := range resourceNames {
-		if err := ensureThirdPartyResource(clientset, resName); err != nil {
+		if err := ensureThirdPartyResource(ki, resName); err != nil {
 			return err
 		}
 	}
@@ -33,16 +33,16 @@ func EnsureThirdPartyResourcesExist(clientset *kubernetes.Clientset) error {
 	return nil
 }
 
-func RemoveThirdPartyResources(clientset *kubernetes.Clientset) {
+func RemoveThirdPartyResources(ki kubernetes.Interface) {
 	for _, name := range []string{"ip-node", "ip-claim", "ip-claim-pool"} {
 		fullName := strings.Join([]string{name, GroupName}, ".")
-		clientset.Extensions().ThirdPartyResources().Delete(fullName, &api.DeleteOptions{})
+		ki.Extensions().ThirdPartyResources().Delete(fullName, &api.DeleteOptions{})
 	}
 }
 
-func ensureThirdPartyResource(clientset *kubernetes.Clientset, name string) error {
+func ensureThirdPartyResource(ki kubernetes.Interface, name string) error {
 	fullName := strings.Join([]string{name, GroupName}, ".")
-	_, err := clientset.Extensions().ThirdPartyResources().Get(fullName)
+	_, err := ki.Extensions().ThirdPartyResources().Get(fullName)
 	if err == nil {
 		return nil
 	}
@@ -52,6 +52,6 @@ func ensureThirdPartyResource(clientset *kubernetes.Clientset, name string) erro
 			{Name: Version},
 		}}
 	resource.SetName(fullName)
-	_, err = clientset.Extensions().ThirdPartyResources().Create(resource)
+	_, err = ki.Extensions().ThirdPartyResources().Create(resource)
 	return err
 }

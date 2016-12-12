@@ -22,7 +22,6 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/clientcmd"
 	"k8s.io/kubernetes/pkg/api"
@@ -68,7 +67,7 @@ func InitScheduler() error {
 		glog.Errorf("Crashed during scheduler initialization: %v", err)
 		os.Exit(2)
 	}
-	err = extensions.EnsureThirdPartyResourcesExist(s.Clientset.(*kubernetes.Clientset))
+	err = extensions.EnsureThirdPartyResourcesExist(s.Clientset)
 	if err != nil {
 		glog.Errorf("Crashed while initializing third party resources: %v", err)
 		os.Exit(2)

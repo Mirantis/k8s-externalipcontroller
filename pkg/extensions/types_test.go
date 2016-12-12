@@ -18,7 +18,7 @@ import (
 	"testing"
 )
 
-func checkFreeIP(p *IpClaimPool, expected string, t *testing.T) {
+func checkFreeIP(t *testing.T, p *IpClaimPool, expected string) {
 	actual, err := p.AvailableIP()
 	if err != nil {
 		t.Errorf("Error must not occur during AvailableIP() method; details --> %v\n", err)
@@ -29,7 +29,7 @@ func checkFreeIP(p *IpClaimPool, expected string, t *testing.T) {
 	}
 }
 
-func checkNoFreeIPError(p *IpClaimPool, t *testing.T) {
+func checkNoFreeIPError(t *testing.T, p *IpClaimPool) {
 	ip, err := p.AvailableIP()
 
 	if len(ip) != 0 {
@@ -62,12 +62,12 @@ func TestIpClaimPoolAvailableIPFromCIDR(t *testing.T) {
 		},
 	}
 
-	checkFreeIP(ClaimPool, expectedIP, t)
+	checkFreeIP(t, ClaimPool, expectedIP)
 
 	allocated["192.168.16.254"] = "test-claim-254"
 	allocated["192.168.16.251"] = "test-claim-251"
 
-	checkNoFreeIPError(ClaimPool, t)
+	checkNoFreeIPError(t, ClaimPool)
 }
 
 func TestIpClaimPoolAvailableIPFromRange(t *testing.T) {
@@ -89,11 +89,11 @@ func TestIpClaimPoolAvailableIPFromRange(t *testing.T) {
 		},
 	}
 
-	checkFreeIP(ClaimPool, expectedIP, t)
+	checkFreeIP(t, ClaimPool, expectedIP)
 
 	allocated["192.168.16.252"] = "test-claim-252"
 
-	checkNoFreeIPError(ClaimPool, t)
+	checkNoFreeIPError(t, ClaimPool)
 }
 
 func TestIpClaimPoolRangesProperlyProcessed(t *testing.T) {
@@ -119,9 +119,9 @@ func TestIpClaimPoolRangesProperlyProcessed(t *testing.T) {
 		},
 	}
 
-	checkFreeIP(ClaimPool, expectedIP, t)
+	checkFreeIP(t, ClaimPool, expectedIP)
 
 	allocated["192.168.16.253"] = "test-claim-253"
 
-	checkNoFreeIPError(ClaimPool, t)
+	checkNoFreeIPError(t, ClaimPool)
 }

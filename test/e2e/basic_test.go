@@ -1084,6 +1084,7 @@ func getAllocatedClaims(ext extensions.ExtensionsClientset) map[string]string {
 	}
 	return allocatedClaims
 }
+
 func checkIpClaimsEventualCount(ext extensions.ExtensionsClientset, count int) {
 	Eventually(func() error {
 		ipclaims, err := ext.IPClaims().List(api.ListOptions{})
