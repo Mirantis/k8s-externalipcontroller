@@ -16,6 +16,7 @@ package app
 
 import (
 	"os"
+	"time"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/claimcontroller"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
@@ -66,7 +67,10 @@ func InitController() error {
 	}
 	err = extensions.EnsureThirdPartyResourcesExist(c.Clientset)
 	if err != nil {
-
+		return err
+	}
+	err = extensions.WaitThirdPartyResources(c.ExtensionsClientset, 10*time.Second, 1*time.Second)
+	if err != nil {
 		return err
 	}
 	c.Run(stop)

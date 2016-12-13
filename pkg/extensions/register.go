@@ -16,6 +16,7 @@ package extensions
 
 import (
 	"strings"
+	"time"
 
 	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api"
@@ -54,4 +55,29 @@ func ensureThirdPartyResource(ki kubernetes.Interface, name string) error {
 	resource.SetName(fullName)
 	_, err = ki.Extensions().ThirdPartyResources().Create(resource)
 	return err
+}
+
+func WaitThirdPartyResources(ext ExtensionsClientset, timeout time.Duration, interval time.Duration) (err error) {
+	timeoutChan := time.After(timeout)
+	intervalChan := time.Tick(interval)
+	for {
+		select {
+		case <-timeoutChan:
+			return err
+		case <-intervalChan:
+			_, err = ext.IPClaims().List(api.ListOptions{})
+			if err != nil {
+				continue
+			}
+			_, err = ext.IPNodes().List(api.ListOptions{})
+			if err != nil {
+				continue
+			}
+			_, err = ext.IPClaimPools().List(api.ListOptions{})
+			if err != nil {
+				continue
+			}
+			return nil
+		}
+	}
 }
