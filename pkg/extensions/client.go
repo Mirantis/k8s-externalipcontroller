@@ -84,6 +84,7 @@ type IPClaimPoolsInterface interface {
 	Create(*IpClaimPool) (*IpClaimPool, error)
 	Get(name string) (*IpClaimPool, error)
 	List(api.ListOptions) (*IpClaimPoolList, error)
+	Update(*IpClaimPool) (*IpClaimPool, error)
 	Delete(string, *api.DeleteOptions) error
 }
 
@@ -304,4 +305,18 @@ func (c *IpClaimPoolClient) Delete(name string, options *api.DeleteOptions) erro
 		Body(options).
 		Do().
 		Error()
+}
+
+func (c *IpClaimPoolClient) Update(ipclaimpool *IpClaimPool) (result *IpClaimPool, err error) {
+	result = &IpClaimPool{}
+	resp, err := c.client.Put().
+		Namespace("default").
+		Resource("ipclaimpools").
+		Name(ipclaimpool.Metadata.Name).
+		Body(ipclaimpool).
+		DoRaw()
+	if err != nil {
+		return result, err
+	}
+	return result, decodeResponseInto(resp, result)
 }

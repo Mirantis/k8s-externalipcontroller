@@ -16,12 +16,16 @@ package extensions
 
 import (
 	"encoding/json"
+	"errors"
+	"net"
 
 	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/meta"
 	"k8s.io/client-go/1.5/pkg/api/unversioned"
 	"k8s.io/client-go/1.5/pkg/apimachinery/announced"
 	"k8s.io/client-go/1.5/pkg/runtime"
+
+	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 )
 
 const (
@@ -134,16 +138,10 @@ type IpClaimPool struct {
 	Spec IpClaimPoolSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 }
 
-func (e *IpClaimPool) GetObjectKind() unversioned.ObjectKind {
-	return &e.TypeMeta
-}
-
-func (e *IpClaimPool) GetObjectMeta() meta.Object {
-	return &e.Metadata
-}
-
 type IpClaimPoolSpec struct {
-	Range string `json:"range" protobuf:"bytes,10,opt,name=range"`
+	CIDR      string            `json:"cidr" protobuf:"bytes,10,opt,name=cidr"`
+	Ranges    [][]string        `json:"ranges,omitempty" protobuf:"bytes,5,opt,name=ranges"`
+	Allocated map[string]string `json:"allocated,omitempty" protobuf:"bytes,2,opt,name=allocated"`
 }
 
 type IpClaimPoolList struct {
@@ -153,6 +151,61 @@ type IpClaimPoolList struct {
 	unversioned.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	Items []IpClaimPool `json:"items" protobuf:"bytes,2,rep,name=items"`
+}
+
+func (p *IpClaimPool) AvailableIP() (availableIP string, err error) {
+	ip, network, err := net.ParseCIDR(p.Spec.CIDR)
+	if err != nil {
+		return
+	}
+
+	var dropOffIP net.IP
+
+	ranges := [][]net.IP{}
+
+	//in case 'Ranges' is not set for the pool assume ranges of the
+	//network itself
+	if p.Spec.Ranges != nil {
+		for _, r := range p.Spec.Ranges {
+			ip = net.ParseIP(r[0])
+			dropOffIP = net.ParseIP(r[len(r)-1])
+			netutils.IPIncrement(dropOffIP)
+
+			ranges = append(ranges, []net.IP{ip, dropOffIP})
+		}
+	} else {
+		//network address is not usable
+		netutils.IPIncrement(ip)
+		ranges = [][]net.IP{{ip, dropOffIP}}
+	}
+
+	for _, r := range ranges {
+		curAddr := r[0]
+		nextAddr := make(net.IP, len(curAddr))
+		copy(nextAddr, curAddr)
+		netutils.IPIncrement(nextAddr)
+
+		firstOut := r[len(r)-1]
+
+		for network.Contains(curAddr) && network.Contains(nextAddr) && !curAddr.Equal(firstOut) {
+			if _, exists := p.Spec.Allocated[curAddr.String()]; !exists {
+				return curAddr.String(), nil
+			}
+			netutils.IPIncrement(curAddr)
+			netutils.IPIncrement(nextAddr)
+
+		}
+	}
+
+	return "", errors.New("There is no free IP left in the pool")
+}
+
+func (p *IpClaimPool) GetObjectKind() unversioned.ObjectKind {
+	return &p.TypeMeta
+}
+
+func (p *IpClaimPool) GetObjectMeta() meta.Object {
+	return &p.Metadata
 }
 
 // see https://github.com/kubernetes/client-go/issues/8

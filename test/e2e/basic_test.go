@@ -360,17 +360,79 @@ var _ = Describe("Third party objects", func() {
 			}
 			return nil
 		}, 30*time.Second, 2*time.Second).Should(BeNil())
+	})
 
+	It("Scheduler will create ipclaim and update service in case auto allocation for it is enabled", func() {
+		By("deploying scheduler pod")
+		pod := newPod(
+			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{"ipmanager", "s", "--mask=24", "--logtostderr", "--v=5"}, nil, false, false)
+		pod, err := clientset.Core().Pods(ns.Name).Create(pod)
+		testutils.WaitForReady(clientset, pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("create IP pool")
+		poolCIDR := "192.168.16.248/29"
+		allocatedIP := "192.168.16.250"
+		poolRanges := [][]string{[]string{"192.168.16.250", "192.168.16.252"}}
+		pool := &extensions.IpClaimPool{
+			Metadata: api.ObjectMeta{Name: "test-pool"},
+			Spec: extensions.IpClaimPoolSpec{
+				CIDR:   poolCIDR,
+				Ranges: poolRanges,
+			},
+		}
+
+		_, err = ext.IPClaimPools().Create(pool)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("deploying mock service with annotation indicating auto allocation")
+		svcPorts := []v1.ServicePort{{Protocol: v1.ProtocolTCP, Port: 9999, TargetPort: intstr.FromInt(9999)}}
+		svc := newService(
+			"service-with-auto-external-ips", map[string]string{}, svcPorts, []string{})
+		svc.ObjectMeta.Annotations = map[string]string{"external-ip": "auto"}
+		_, err = clientset.Core().Services(ns.Name).Create(svc)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying that IP has been allocated from the pool, ipclaim created and service updated")
+		checkIpClaimsEventualCount(ext, 1)
+
+		pool, err = ext.IPClaimPools().Get("test-pool")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(pool.Spec.Allocated).Should(HaveKey(allocatedIP))
+
+		claim, err := ext.IPClaims().Get(pool.Spec.Allocated[allocatedIP])
+		Expect(err).NotTo(HaveOccurred())
+		Expect(claim.Metadata.Labels).Should(HaveKeyWithValue("ip-pool-name", pool.Metadata.Name))
+
+		svc, err = clientset.Core().Services(ns.Name).Get(svc.ObjectMeta.Name)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(svc.Spec.ExternalIPs).Should(ContainElement(allocatedIP))
+
+		By("Delete service and check that IP was deallocated")
+		err = clientset.Core().Services(ns.Name).Delete(svc.ObjectMeta.Name, &api.DeleteOptions{})
+		Expect(err).NotTo(HaveOccurred())
+
+		checkIpClaimsEventualCount(ext, 0)
+
+		pool, err = ext.IPClaimPools().Get("test-pool")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(pool.Spec.Allocated).ShouldNot(HaveKey(allocatedIP))
 	})
 
 	It("Create IP claim pool resource via its client and try to retrieve it from k8s api back", func() {
 		var err error
 		err = extensions.EnsureThirdPartyResourcesExist(clientset)
 		Expect(err).NotTo(HaveOccurred())
+
+		eRanges := [][]string{[]string{"10.20.0.10/24", "10.20.0.20/24"}}
+		eAllocated := map[string]string{"10.20.0.11/24": "testclaim"}
 		ipclaimpool := &extensions.IpClaimPool{
 			Metadata: api.ObjectMeta{Name: "testclaimpool"},
 			Spec: extensions.IpClaimPoolSpec{
-				Range: "10.20.0.0/24",
+				CIDR:      "10.20.0.0/24",
+				Ranges:    eRanges,
+				Allocated: eAllocated,
 			},
 		}
 		_, err = ext.IPClaimPools().Create(ipclaimpool)
@@ -378,8 +440,15 @@ var _ = Describe("Third party objects", func() {
 
 		created, err := ext.IPClaimPools().Get("testclaimpool")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(created.Spec.Range).To(Equal("10.20.0.0/24"))
+		Expect(created.Spec.CIDR).To(Equal("10.20.0.0/24"))
 		Expect(created.Metadata.Name).To(Equal("testclaimpool"))
+		Expect(created.Spec.Ranges).To(Equal(eRanges))
+		Expect(created.Spec.Allocated).To(Equal(eAllocated))
+
+		ipclaimpool.Metadata.Annotations = map[string]string{"key": "value"}
+		updated, err := ext.IPClaimPools().Update(ipclaimpool)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(updated.Metadata.Annotations).Should(ConsistOf("value"))
 	})
 
 	It("IpClaim watcher should work with resouce version as expected", func() {
@@ -616,7 +685,6 @@ var _ = Describe("Third party objects", func() {
 		By("verifying that all IPs point to one MACs in ARP table")
 		neigh, err = netlink.NeighList(0, 0)
 		Expect(err).NotTo(HaveOccurred())
-
 		Eventually(func() error {
 			macs = map[string]bool{}
 			ips_count = 0
@@ -1015,4 +1083,17 @@ func getAllocatedClaims(ext extensions.ExtensionsClientset) map[string]string {
 		allocatedClaims[ipclaim.Spec.Cidr] = ipclaim.Spec.NodeName
 	}
 	return allocatedClaims
+}
+
+func checkIpClaimsEventualCount(ext extensions.ExtensionsClientset, count int) {
+	Eventually(func() error {
+		ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+		if err != nil {
+			return err
+		}
+		if len(ipclaims.Items) != count {
+			return fmt.Errorf("Criteria is unmet")
+		}
+		return nil
+	}, 30*time.Second, 2*time.Second).Should(BeNil())
 }
