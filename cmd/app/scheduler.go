@@ -16,6 +16,7 @@ package app
 
 import (
 	"os"
+	"time"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/scheduler"
@@ -69,8 +70,11 @@ func InitScheduler() error {
 	}
 	err = extensions.EnsureThirdPartyResourcesExist(s.Clientset)
 	if err != nil {
-		glog.Errorf("Crashed while initializing third party resources: %v", err)
-		os.Exit(2)
+		glog.Fatalf("Crashed while initializing third party resources: %v", err)
+	}
+	err = extensions.WaitThirdPartyResources(s.ExtensionsClientset, 10*time.Second, 1*time.Second)
+	if err != nil {
+		glog.Fatalf("URLs for tprs are not registered: %v", err)
 	}
 
 	if !AppOpts.LeaderElection.LeaderElect {

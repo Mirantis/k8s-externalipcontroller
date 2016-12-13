@@ -105,6 +105,77 @@ var _ = Describe("Basic", func() {
 	})
 })
 
+var _ = Describe("Register third party resources", func() {
+	var clientset *kubernetes.Clientset
+	var ext extensions.ExtensionsClientset
+
+	BeforeEach(func() {
+		var err error
+		clientset, err = testutils.KubeClient()
+		Expect(err).NotTo(HaveOccurred())
+		ext, err = extensions.WrapClientsetWithExtensions(clientset, testutils.LoadConfig())
+		Expect(err).NotTo(HaveOccurred())
+		extensions.RemoveThirdPartyResources(clientset)
+		By("verifying that tprs list is empty")
+		Eventually(func() error {
+			tprs, err := clientset.Extensions().ThirdPartyResources().List(api.ListOptions{})
+			if err != nil {
+				return err
+			}
+			if len(tprs.Items) != 0 {
+				return fmt.Errorf("TPR list is not empty %v", tprs.Items)
+			}
+			return nil
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+	})
+
+	AfterEach(func() {
+		extensions.RemoveThirdPartyResources(clientset)
+	})
+
+	It("should be reliable", func() {
+		By("verifying that urls are not registered and will return error")
+		// removal of tprs and unregestering of urls are also async operation
+		Eventually(func() error {
+			er := fmt.Errorf("Expected error")
+			_, err := ext.IPClaims().List(api.ListOptions{})
+			if err == nil {
+				return er
+			}
+			_, err = ext.IPNodes().List(api.ListOptions{})
+			if err == nil {
+				return er
+			}
+			_, err = ext.IPClaimPools().List(api.ListOptions{})
+			if err == nil {
+				return er
+			}
+			return nil
+		}, 30*time.Second, 1*time.Second).Should(BeNil())
+		By("verifying that all required tprs are created")
+		tprs, err := clientset.Extensions().ThirdPartyResources().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(len(tprs.Items)).To(BeNumerically("==", 0))
+		err = extensions.EnsureThirdPartyResourcesExist(clientset)
+		Expect(err).NotTo(HaveOccurred())
+		tprs, err = clientset.Extensions().ThirdPartyResources().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(len(tprs.Items)).To(BeNumerically("==", 3))
+
+		By("waiting until all tprs will be registered")
+		err = extensions.WaitThirdPartyResources(ext, 20*time.Second, 1*time.Second)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying that urls are registered and user requests can be served")
+		_, err = ext.IPClaims().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		_, err = ext.IPNodes().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		_, err = ext.IPClaimPools().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+	})
+})
+
 var _ = Describe("Third party objects", func() {
 	var clientset *kubernetes.Clientset
 	var ext extensions.ExtensionsClientset
