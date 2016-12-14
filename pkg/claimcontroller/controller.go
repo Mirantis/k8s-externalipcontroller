@@ -31,7 +31,7 @@ import (
 	"k8s.io/client-go/1.5/tools/cache"
 )
 
-func NewClaimController(iface, uid string, config *rest.Config, resyncInterval time.Duration) (*claimController, error) {
+func NewClaimController(iface, uid string, config *rest.Config, resyncInterval time.Duration, hbInterval time.Duration) (*claimController, error) {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, err
@@ -58,7 +58,7 @@ func NewClaimController(iface, uid string, config *rest.Config, resyncInterval t
 		claimSource:         claimSource,
 		queue:               queue,
 		iphandler:           netutils.LinuxIPHandler{},
-		heartbeatPeriod:     2 * time.Second,
+		heartbeatPeriod:     hbInterval,
 		resyncInterval:      resyncInterval,
 	}, nil
 }

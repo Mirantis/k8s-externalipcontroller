@@ -22,3 +22,4 @@ spec:
           - --iface=docker0
           - --logtostderr
           - --v=5
+          - --hb=500ms
