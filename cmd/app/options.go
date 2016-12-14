@@ -23,11 +23,13 @@ import (
 )
 
 type options struct {
-	Kubeconfig     string
-	Iface          string
-	Mask           string
-	Hostname       string
-	ResyncInterval time.Duration
+	Kubeconfig        string
+	Iface             string
+	Mask              string
+	Hostname          string
+	ResyncInterval    time.Duration
+	HeartbeatInterval time.Duration
+	MonitorInterval   time.Duration
 
 	LeaderElection componentconfig.LeaderElectionConfiguration
 }
@@ -44,6 +46,8 @@ func (o *options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&o.Kubeconfig, "kubeconfig", "", "kubeconfig to use with kubernetes client")
 	fs.StringVar(&o.Hostname, "hostname", "", "We will use os.Hostname if none provided")
 	fs.DurationVar(&o.ResyncInterval, "resync", 20*time.Second, "Time to resync state for all ips")
+	fs.DurationVar(&o.HeartbeatInterval, "hb", 2*time.Second, "How often to send heartbeats from controllers?")
+	fs.DurationVar(&o.MonitorInterval, "monitor", 4*time.Second, "How often to check controllers liveness?")
 	o.LeaderElection = leaderelection.DefaultLeaderElectionConfiguration()
 	leaderelection.BindFlags(&o.LeaderElection, fs)
 }

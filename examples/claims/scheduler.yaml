@@ -20,3 +20,4 @@ spec:
             - --logtostderr
             - --v=5
             - --leader-elect=true
+            - --monitor=1s

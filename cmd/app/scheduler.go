@@ -63,7 +63,7 @@ func InitScheduler() error {
 		os.Exit(1)
 	}
 	stop := make(chan struct{})
-	s, err := scheduler.NewIPClaimScheduler(config, mask)
+	s, err := scheduler.NewIPClaimScheduler(config, mask, AppOpts.MonitorInterval)
 	if err != nil {
 		glog.Errorf("Crashed during scheduler initialization: %v", err)
 		os.Exit(2)

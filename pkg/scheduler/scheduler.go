@@ -41,7 +41,7 @@ const (
 	AutoExternalAnnotationValue = "auto"
 )
 
-func NewIPClaimScheduler(config *rest.Config, mask string) (*ipClaimScheduler, error) {
+func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.Duration) (*ipClaimScheduler, error) {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, err
@@ -67,7 +67,7 @@ func NewIPClaimScheduler(config *rest.Config, mask string) (*ipClaimScheduler, e
 		ExtensionsClientset: ext,
 		DefaultMask:         mask,
 
-		monitorPeriod: 4 * time.Second,
+		monitorPeriod: monitorInterval,
 		serviceSource: serviceSource,
 		claimSource:   claimSource,
 
