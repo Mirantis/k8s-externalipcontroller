@@ -61,17 +61,8 @@ func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.
 		},
 	}
 
-	switch nodeFilter{
-	case "fair":
-		getNode := getFairNode
-	case "first":
-		getNode := getFirstNode
-	default:
-		return nil, errors.New("Incorrect node filter is provided")
-	}
-
 	claimSource := cache.NewListWatchFromClient(ext.Client, "ipclaims", api.NamespaceAll, fields.Everything())
-	return &ipClaimScheduler{
+	scheduler := ipClaimScheduler{
 		Config:              config,
 		Clientset:           clientset,
 		ExtensionsClientset: ext,
@@ -84,11 +75,23 @@ func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.
 		observedGeneration: make(map[string]int64),
 		liveIpNodes:        make(map[string]struct{}),
 
-		getNode:            getNode,
+		//queue: workqueue.NewQueue(),
+	}
 
-		queue: workqueue.NewQueue(),
-	}, nil
+	switch nodeFilter{
+	case "fair":
+		scheduler.getNode = scheduler.getFairNode
+	case "first":
+		scheduler.getNode = scheduler.getFirstNode
+	default:
+		return nil, errors.New("Incorrect node filter is provided")
+	}
+
+	scheduler.queue = workqueue.NewQueue()
+	return &scheduler, nil
 }
+
+type NodeFilter func([]*extensions.IpNode) *extensions.IpNode
 
 type ipClaimScheduler struct {
 	Config              *rest.Config
@@ -107,7 +110,7 @@ type ipClaimScheduler struct {
 	claimStore   cache.Store
 	serviceStore cache.Store
 
-	getNode([]*extensions.IpNode) (*extensions.IpNode)
+	getNode NodeFilter
 
 	queue workqueue.QueueType
 }
@@ -368,7 +371,7 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
 	if len(liveNodes) == 0 {
 		return fmt.Errorf("No live nodes")
 	}
-	ipnode := s.findFairNode(liveNodes)
+	ipnode := s.getNode(liveNodes)
 	claim.Metadata.SetLabels(map[string]string{"ipnode": ipnode.Metadata.Name})
 	claim.Spec.NodeName = ipnode.Metadata.Name
 	glog.V(3).Infof("Scheduling claim %v on a node %v",

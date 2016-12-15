@@ -15,25 +15,9 @@
 package scheduler
 
 import (
-	"fmt"
-	"strings"
-	"sync"
-	"time"
-
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
-	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 
 	"github.com/golang/glog"
-	"k8s.io/client-go/1.5/kubernetes"
-	"k8s.io/client-go/1.5/pkg/api"
-	apierrors "k8s.io/client-go/1.5/pkg/api/errors"
-	"k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/pkg/fields"
-	"k8s.io/client-go/1.5/pkg/labels"
-	"k8s.io/client-go/1.5/pkg/runtime"
-	"k8s.io/client-go/1.5/pkg/watch"
-	"k8s.io/client-go/1.5/rest"
-	"k8s.io/client-go/1.5/tools/cache"
 )
 
 func (s *ipClaimScheduler) getFairNode(ipnodes []*extensions.IpNode) *extensions.IpNode {
