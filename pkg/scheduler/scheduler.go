@@ -75,7 +75,7 @@ func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.
 		observedGeneration: make(map[string]int64),
 		liveIpNodes:        make(map[string]struct{}),
 
-		//queue: workqueue.NewQueue(),
+		queue: workqueue.NewQueue(),
 	}
 
 	switch nodeFilter{
@@ -87,11 +87,10 @@ func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.
 		return nil, errors.New("Incorrect node filter is provided")
 	}
 
-	scheduler.queue = workqueue.NewQueue()
 	return &scheduler, nil
 }
 
-type NodeFilter func([]*extensions.IpNode) *extensions.IpNode
+type nodeFilter func([]*extensions.IpNode) *extensions.IpNode
 
 type ipClaimScheduler struct {
 	Config              *rest.Config
@@ -110,7 +109,7 @@ type ipClaimScheduler struct {
 	claimStore   cache.Store
 	serviceStore cache.Store
 
-	getNode NodeFilter
+	getNode nodeFilter
 
 	queue workqueue.QueueType
 }
