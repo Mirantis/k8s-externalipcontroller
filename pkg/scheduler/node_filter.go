@@ -46,6 +46,6 @@ func (s *ipClaimScheduler) getFairNode(ipnodes []*extensions.IpNode) *extensions
 	return min
 }
 
-func (s *ipClaimScheduler) getFirstNode(ipnodes []*extensions.IpNode) *extensions.IpNode {
+func (s *ipClaimScheduler) getFirstAliveNode(ipnodes []*extensions.IpNode) *extensions.IpNode {
 	return ipnodes[0]
 }

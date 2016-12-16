@@ -81,8 +81,8 @@ func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.
 	switch nodeFilter{
 	case "fair":
 		scheduler.getNode = scheduler.getFairNode
-	case "first":
-		scheduler.getNode = scheduler.getFirstNode
+	case "first-alive":
+		scheduler.getNode = scheduler.getFirstAliveNode
 	default:
 		return nil, errors.New("Incorrect node filter is provided")
 	}

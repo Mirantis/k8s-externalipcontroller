@@ -522,7 +522,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(updated.Metadata.Annotations).Should(ConsistOf("value"))
 	})
 
-	It("IpClaim watcher should work with resouce version as expected", func() {
+	It("IpClaim watcher should work with resource version as expected", func() {
 		By("ensuring that third party resources are created")
 		err := extensions.EnsureThirdPartyResourcesExist(clientset)
 		By("creating ipclaim object")
@@ -803,7 +803,7 @@ var _ = Describe("Third party objects", func() {
 		By("deploying claim scheduler pod")
 		pod := newPod(
 			"scheduller", "scheduller", "mirantis/k8s-externalipcontroller",
-			[]string{processName, "s", "--mask=24", "--logtostderr", "--v=5"}, nil, false, false)
+			[]string{processName, "s", "--mask=24", "--logtostderr", "--v=5", "--nodefilter=first-alive"}, nil, false, false)
 		_, err := clientset.Core().Pods(ns.Name).Create(pod)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -848,7 +848,9 @@ var _ = Describe("Third party objects", func() {
 		var totalCount int
 		for i := range dsPods {
 			managedIPs := getManagedIps(clientset, dsPods[i], network, "docker0")
-			Expect(len(managedIPs)).To(BeNumerically("<", len(externalIPs)))
+			if len(managedIPs) > 0 {
+				Expect(len(managedIPs)).To(BeNumerically("==", len(externalIPs)))
+			}
 			totalCount += len(managedIPs)
 		}
 		Expect(totalCount).To(BeNumerically("==", len(externalIPs)))
