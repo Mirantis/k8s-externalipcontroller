@@ -14,6 +14,9 @@
 package app
 
 import (
+	"fmt"
+	"errors"
+	"strings"
 	"time"
 
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
@@ -38,6 +41,11 @@ type options struct {
 
 var AppOpts = options{}
 
+var NodeFilters = []string{
+	"fair",
+	"first-alive",
+}
+
 func init() {
 	AppOpts.AddFlags(pflag.CommandLine)
 }
@@ -47,10 +55,20 @@ func (o *options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&o.Mask, "mask", "32", "mask part of the cidr")
 	fs.StringVar(&o.Kubeconfig, "kubeconfig", "", "kubeconfig to use with kubernetes client")
 	fs.StringVar(&o.Hostname, "hostname", "", "We will use os.Hostname if none provided")
-	fs.StringVar(&o.NodeFilter, "nodefilter", "fair", "We will use 'fair' if none provided")
+	filterList := strings.Join(NodeFilters, "|")
+	fs.StringVar(&o.NodeFilter, "nodefilter", NodeFilters[0], fmt.Sprintf("Possible values: %s. We will use '%s' if none was provided.", filterList, NodeFilters[0]))
 	fs.DurationVar(&o.ResyncInterval, "resync", 20*time.Second, "Time to resync state for all ips")
 	fs.DurationVar(&o.HeartbeatInterval, "hb", 2*time.Second, "How often to send heartbeats from controllers?")
 	fs.DurationVar(&o.MonitorInterval, "monitor", 4*time.Second, "How often to check controllers liveness?")
 	o.LeaderElection = leaderelection.DefaultLeaderElectionConfiguration()
 	leaderelection.BindFlags(&o.LeaderElection, fs)
+}
+
+func (o *options) CheckFlags() error {
+	for _, f := range NodeFilters {
+		if o.NodeFilter == f {
+			return nil
+		}
+	}
+	return errors.New("Incorrect node filter is provided")
 }
