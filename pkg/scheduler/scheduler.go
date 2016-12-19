@@ -15,6 +15,7 @@
 package scheduler
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -41,7 +42,7 @@ const (
 	AutoExternalAnnotationValue = "auto"
 )
 
-func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.Duration) (*ipClaimScheduler, error) {
+func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.Duration, nodeFilter string) (*ipClaimScheduler, error) {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, err
@@ -61,7 +62,7 @@ func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.
 	}
 
 	claimSource := cache.NewListWatchFromClient(ext.Client, "ipclaims", api.NamespaceAll, fields.Everything())
-	return &ipClaimScheduler{
+	scheduler := ipClaimScheduler{
 		Config:              config,
 		Clientset:           clientset,
 		ExtensionsClientset: ext,
@@ -75,8 +76,21 @@ func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.
 		liveIpNodes:        make(map[string]struct{}),
 
 		queue: workqueue.NewQueue(),
-	}, nil
+	}
+
+	switch nodeFilter{
+	case "fair":
+		scheduler.getNode = scheduler.getFairNode
+	case "first-alive":
+		scheduler.getNode = scheduler.getFirstAliveNode
+	default:
+		return nil, errors.New("Incorrect node filter is provided")
+	}
+
+	return &scheduler, nil
 }
+
+type nodeFilter func([]*extensions.IpNode) *extensions.IpNode
 
 type ipClaimScheduler struct {
 	Config              *rest.Config
@@ -94,6 +108,8 @@ type ipClaimScheduler struct {
 
 	claimStore   cache.Store
 	serviceStore cache.Store
+
+	getNode nodeFilter
 
 	queue workqueue.QueueType
 }
@@ -346,7 +362,7 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
 	if err != nil {
 		return err
 	}
-	// this needs to be queued and requeud in case of node absence
+	// this needs to be queued and requeued in case of node absence
 	if len(ipnodes.Items) == 0 {
 		return fmt.Errorf("No nodes")
 	}
@@ -354,7 +370,7 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
 	if len(liveNodes) == 0 {
 		return fmt.Errorf("No live nodes")
 	}
-	ipnode := s.findFairNode(liveNodes)
+	ipnode := s.getNode(liveNodes)
 	claim.Metadata.SetLabels(map[string]string{"ipnode": ipnode.Metadata.Name})
 	claim.Spec.NodeName = ipnode.Metadata.Name
 	glog.V(3).Infof("Scheduling claim %v on a node %v",
@@ -363,32 +379,6 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
 	glog.V(3).Infof("Claim %v updated with node %v. Resource version %v",
 		claim.Metadata.Name, claim.Spec.NodeName, claim.Metadata.ResourceVersion)
 	return err
-}
-
-func (s *ipClaimScheduler) findFairNode(ipnodes []*extensions.IpNode) *extensions.IpNode {
-	counter := make(map[string]int)
-	for _, key := range s.claimStore.ListKeys() {
-		obj, _, err := s.claimStore.GetByKey(key)
-		claim := obj.(*extensions.IpClaim)
-		if err != nil {
-			glog.Errorln(err)
-			continue
-		}
-		if claim.Spec.NodeName == "" {
-			continue
-		}
-		counter[claim.Spec.NodeName]++
-	}
-	var min *extensions.IpNode
-	minCount := -1
-	for _, node := range ipnodes {
-		count := counter[node.Metadata.Name]
-		if minCount == -1 || count < minCount {
-			minCount = count
-			min = node
-		}
-	}
-	return min
 }
 
 func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time.Time) {

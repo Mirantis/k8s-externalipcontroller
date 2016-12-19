@@ -24,6 +24,9 @@ import (
 
 func main() {
 	flag.InitFlags()
+	if err := app.AppOpts.CheckFlags(); err != nil {
+		log.Fatal(err)
+	}
 	if err := app.Root.Execute(); err != nil {
 		log.Fatal(err)
 	}

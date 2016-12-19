@@ -298,6 +298,7 @@ func TestClaimWatcher(t *testing.T) {
 		liveIpNodes:         make(map[string]struct{}),
 		queue:               workqueue.NewQueue(),
 	}
+	s.getNode = s.getFairNode
 	go s.worker()
 	go s.claimWatcher(stop)
 	defer close(stop)
