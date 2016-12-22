@@ -3,7 +3,7 @@ Basic Modules and Operating Modes
 
 ## Basic modules
 
-Application has two basic modules: controller and scheduler. 
+Application consists of two basic modules: controller and scheduler. 
 
 Controller module manages IPs on its node (brings up, deletes, ensures that list
 of IPs on node reflects the list of IPs required for services).
@@ -14,7 +14,8 @@ one controller at a time.
 Scheduler module processes IP claims from services and distributes them among
 controllers (i.e. nodes).
 Scheduler(s) can be run on any nodes as they just schedule claims among the
-controllers.
+controllers. Scheduler module is not obligatory to be run. It is not in use
+while application runs in Simple mode.
 
 ## Operating Modes
 
@@ -33,9 +34,9 @@ another k8s worker node and will bring External IPs up on that node.
 Simple mode is easy to setup and takes less resources. It makes sense when all
 IPs should be brought up on the same node. However, fail-over in this mode takes
 longer than in daemon set mode (k8s detects node failure in much longer
-intervals by default, see node-monitor-grace-period, pod-eviction-timeout; these
-could be minimized but there was no research on how safe is it to set them to
-say 2-5 seconds).
+intervals by default, see `node-monitor-grace-period`, `pod-eviction-timeout`;
+these could be minimized but there was no research on how safe is it to set them
+to some 2-5 seconds) and it may work wrong in some cases.
 
 ## Daemon Set mode
 
@@ -48,10 +49,14 @@ HA for scheduler (A/B mode). So, that in case of no response from active
 scheduler (e.g. on node failure) another one becomes active. If more than one
 scheduler will be used then scheduler election mode should be switched on
 (parameter `leader-elect=true`).
+
+# IPs distribution in Daemon Set mode
+
 There can be different rules of IPs distribution among controllers (i.e. nodes).
-It is controlled by `nodefilter` parameter. Default rule is to distribute IPs
-evenly among all controllers (`nodefilter=fair`). Alternative one is
-`nodefilter=first-alive` when all IPs will be spawned on the first available
-controller (i.e. node).
+This is controlled by `nodefilter` parameter. Default rule is to distribute IPs
+evenly among all the controllers (`nodefilter=fair`). Alternative rule is
+`nodefilter=first-alive` where all IPs will be spawned on the first available
+controller (i.e. node). Daemon Set mode with `first-alive` rule is similar to
+Simple mode but with more responsive and correct fail-over.
 
 
