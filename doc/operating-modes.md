@@ -79,6 +79,8 @@ Next command-line parameters are available in Claims mode for controller module:
 * `kubeconfig` - kubeconfig to use with kubernetes client (default "").
 * `mask` - mask part of network CIDR (default "32").
 * `resync` - interval to resync state for all ips (default 20 sec).
+* `hostname` - use provided hostname instead of os.Hostname (default
+os.Hostname).
 
 Next command-line parameters are available in Claims mode for scheduler module:
 * `kubeconfig` - kubeconfig to use with kubernetes client (default "").
