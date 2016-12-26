@@ -12,6 +12,7 @@ traffic to one of k8s worker nodes which has `kube-proxy` running and thus has
 needed `iptables` rules for External IPs.
 
 ## Proposed solution
+
 External IP controller is k8s application which is deployed on top of k8s
 cluster and which configures External IPs on k8s worker node(s) to provide
 IP connectivity.
