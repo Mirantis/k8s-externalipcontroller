@@ -61,7 +61,7 @@ scheduler will be used then scheduler election mode should be switched on
 (parameter `leader-elect=true`) otherwise there can be race conditions between
 schedulers.
 It is better not to run scheduler on same node as controller because in case of
-node outage IPs reschedulling will take more time.
+node outage IPs rescheduling will take more time.
 
 # IPs distribution in Claims mode
 
@@ -79,7 +79,7 @@ Next command-line parameters are available in Claims mode for controller module:
 * `hb` - how often to send heartbeats from controllers (default 2 sec).
 * `kubeconfig` - kubeconfig to use with kubernetes client (default ""; incluster
 configuration for auth will be used by default).
-* `resync` - interval to resync state for all ips (default 20 sec).
+* `resync` - interval to resync state for all IPs (default 20 sec).
 * `hostname` - use provided hostname instead of os.Hostname (default
 os.Hostname).
 
@@ -90,6 +90,6 @@ configuration for auth will be used by default).
 auto-allocation.
 * `nodefilter` - node filter to use while dispatching IP claims; it controls IPs
 distribution between controllers (default "fair").
-* `monitor`, 4*time.Second, how often to check controllers liveness (default 4
+* `monitor` - how often to check controllers responsiveness (default 4
 sec).
 
