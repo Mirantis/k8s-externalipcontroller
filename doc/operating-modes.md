@@ -88,7 +88,7 @@ Next command-line parameters are available in Claims mode for scheduler module:
 configuration for auth will be used by default).
 * `mask` - mask part of network CIDR (default "32"), it is not in use for
 auto-allocation.
-*	`nodefilter` - node filter to use while dispatching IP claims; it controls IPs
+* `nodefilter` - node filter to use while dispatching IP claims; it controls IPs
 distribution between controllers (default "fair").
 * `monitor`, 4*time.Second, how often to check controllers liveness (default 4
 sec).
