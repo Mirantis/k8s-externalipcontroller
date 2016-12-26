@@ -42,7 +42,8 @@ to some 2-5 seconds) and it may work wrong in some cases.
 
 Next command-line parameters are available in Simple mode for controller module:
 * `iface` - interface that will be used to assign IP addresses (default "eth0").
-* `kubeconfig` - kubeconfig to use with kubernetes client (default "").
+* `kubeconfig` - kubeconfig to use with kubernetes client (default ""; incluster
+configuration for auth will be used by default).
 * `mask` - mask part of network CIDR (default "32").
 * `resync` - interval to resync state for all ips (default 20 sec).
 It is usually enough to set `iface` and `mask` parameters.
@@ -57,10 +58,10 @@ scheduler on every particular node. Several scheduler modules are run to provide
 HA for scheduler (A/B mode). So, that in case of no response from active
 scheduler (e.g. on node failure) another one becomes active. If more than one
 scheduler will be used then scheduler election mode should be switched on
-(parameter `leader-elect=true`) otherwise there can be race condition between
+(parameter `leader-elect=true`) otherwise there can be race conditions between
 schedulers.
 It is better not to run scheduler on same node as controller because in case of
-node outage IP fail-over will take more time.
+node outage IPs reschedulling will take more time.
 
 # IPs distribution in Claims mode
 
@@ -76,15 +77,17 @@ rule is similar to Simple mode but with more responsive and correct fail-over.
 Next command-line parameters are available in Claims mode for controller module:
 * `iface` - interface that will be used to assign IP addresses (default "eth0").
 * `hb` - how often to send heartbeats from controllers (default 2 sec).
-* `kubeconfig` - kubeconfig to use with kubernetes client (default "").
-* `mask` - mask part of network CIDR (default "32").
+* `kubeconfig` - kubeconfig to use with kubernetes client (default ""; incluster
+configuration for auth will be used by default).
 * `resync` - interval to resync state for all ips (default 20 sec).
 * `hostname` - use provided hostname instead of os.Hostname (default
 os.Hostname).
 
 Next command-line parameters are available in Claims mode for scheduler module:
-* `kubeconfig` - kubeconfig to use with kubernetes client (default "").
-* `mask` - mask part of network CIDR (default "32").
+* `kubeconfig` - kubeconfig to use with kubernetes client (default ""; incluster
+configuration for auth will be used by default).
+* `mask` - mask part of network CIDR (default "32"), it is not in use for
+auto-allocation.
 *	`nodefilter` - node filter to use while dispatching IP claims; it controls IPs
 distribution between controllers (default "fair").
 * `monitor`, 4*time.Second, how often to check controllers liveness (default 4
