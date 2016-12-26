@@ -44,12 +44,7 @@ func InitController() error {
 	kubeconfig := AppOpts.Kubeconfig
 	iface := AppOpts.Iface
 	hostname := AppOpts.Hostname
-
-	if kubeconfig != "" {
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	} else {
-		config, err = rest.InClusterConfig()
-	}
+	config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		return err
 	}

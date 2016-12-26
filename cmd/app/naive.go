@@ -47,12 +47,7 @@ func InitNaiveController() error {
 
 	var err error
 	var config *rest.Config
-	if kubeconfig != "" {
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	} else {
-		glog.Infof("kubeconfig is empty, assuming we are running in kubernetes cluster")
-		config, err = rest.InClusterConfig()
-	}
+	config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		glog.Errorf("Error parsing config. %v", err)
 		return err
