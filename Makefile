@@ -89,7 +89,7 @@ $(BUILD_DIR):
 
 
 $(BUILD_DIR)/ipmanager: $(BUILD_DIR) $(VENDOR_DIR)
-	$(DOCKER_EXEC) bash -xc 'go build --ldflags "-extldflags \"-static\"" \
+	$(DOCKER_EXEC) bash -xc 'apt-get update; apt-get install -y libpcap-dev; go build --ldflags "-extldflags \"-static\"" \
 		-o $@ ./cmd/ipmanager/ ; \
 		chown $(shell id -u):$(shell id -u) -R _output'
 
