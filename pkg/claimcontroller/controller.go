@@ -16,6 +16,7 @@ package claimcontroller
 
 import (
 	"time"
+	"strings"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
@@ -50,6 +51,7 @@ func NewClaimController(iface, uid string, config *rest.Config, resyncInterval t
 		},
 	}
 	queue := workqueue.NewQueue()
+	uid = strings.Replace(uid, ".", "-", -1)
 	return &claimController{
 		Clientset:           clientset,
 		ExtensionsClientset: ext,
