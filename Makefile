@@ -13,8 +13,9 @@ ifeq ($(DOCKER_BUILD), yes)
 	_DOCKER_GOPATH = /go
 	_DOCKER_WORKDIR = $(_DOCKER_GOPATH)/src/github.com/Mirantis/k8s-externalipcontroller/
 	_DOCKER_IMAGE  = golang:1.7
+	_DOCKER_DEPS = apt-get update; apt-get install -y libpcap-dev;
 	DOCKER_EXEC = docker run --rm -it -v "$(ROOT_DIR):$(_DOCKER_WORKDIR)" \
-		-w "$(_DOCKER_WORKDIR)" $(_DOCKER_IMAGE)
+		-w "$(_DOCKER_WORKDIR)" $(_DOCKER_IMAGE) $(_DOCKER_DEPS)
 else
 	DOCKER_EXEC =
 endif
@@ -89,7 +90,7 @@ $(BUILD_DIR):
 
 
 $(BUILD_DIR)/ipmanager: $(BUILD_DIR) $(VENDOR_DIR)
-	$(DOCKER_EXEC) bash -xc 'apt-get update; apt-get install -y libpcap-dev; go build --ldflags "-extldflags \"-static\"" \
+	$(DOCKER_EXEC) bash -xc 'go build --ldflags "-extldflags \"-static\"" \
 		-o $@ ./cmd/ipmanager/ ; \
 		chown $(shell id -u):$(shell id -u) -R _output'
 
