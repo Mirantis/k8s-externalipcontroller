@@ -90,7 +90,7 @@ func (n *Queue) Get() (item interface{}, quit bool) {
 
 	for {
 		item, n.queue = n.queue[0], n.queue[1:]
-		// item was removed and shouldnt be processed
+		// item was removed and shouldn't be processed
 		if _, exists := n.added[item]; !exists {
 			if len(n.queue) == 0 {
 				return nil, n.closed

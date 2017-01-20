@@ -176,7 +176,7 @@ func (s *ipClaimScheduler) processExternalIPs(svc *v1.Service) {
 		}
 		err = tryCreateIPClaim(s.ExtensionsClientset, makeIPClaim(ip, s.DefaultMask))
 		if err != nil {
-			glog.Errorf("Unable to create IP claim %v", err)
+			glog.Errorf("Unable to create IP claim. Details: %v", err)
 		}
 	}
 
@@ -195,7 +195,7 @@ func poolByAllocatedIP(ip string, poolList *extensions.IpClaimPoolList) *extensi
 }
 
 func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service, poolList *extensions.IpClaimPoolList) {
-	glog.V(5).Infof("Try to auto allocate external IP for service %v", svc.ObjectMeta.Name)
+	glog.V(5).Infof("Try to auto allocate external IP for service '%v'", svc.ObjectMeta.Name)
 
 	var freeIP string
 	var pool extensions.IpClaimPool
@@ -204,7 +204,7 @@ func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service, poolList *ext
 		ip, err := p.AvailableIP()
 		if err != nil {
 			glog.Errorf(
-				"Fail to retrieve free IP from the pool %v; skipping to a next one. Details: %v",
+				"Fail to retrieve free IP from the pool '%v'; skipping to a next one. Details: %v",
 				p.Metadata.Name, err)
 			continue
 		}
@@ -215,7 +215,7 @@ func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service, poolList *ext
 
 	if len(freeIP) == 0 {
 		glog.Errorf(
-			"Fail to provide external IP for service %v. All pools are exhausted.",
+			"Fail to provide external IP for service '%v'. All pools are exhausted.",
 			svc.ObjectMeta.Name)
 		return
 	}
@@ -228,19 +228,19 @@ func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service, poolList *ext
 
 	err := tryCreateIPClaim(s.ExtensionsClientset, ipclaim)
 	if err != nil {
-		glog.Errorf("Unable to create ip claim for IP %v. Details %v",
+		glog.Errorf("Unable to create IP claim for IP '%v'. Details: %v",
 			freeIP, err)
 	}
 
 	err = updatePoolAllocation(s.ExtensionsClientset, &pool, freeIP, ipclaim.Metadata.Name)
 	if err != nil {
-		glog.Errorf("Unable to update IP pool's %v allocation. Details %v",
+		glog.Errorf("Unable to update IP pool's '%v' allocation. Details: %v",
 			pool.Metadata.Name, err)
 	}
 
 	err = addServiceExternalIP(svc, s.Clientset, freeIP)
 	if err != nil {
-		glog.Errorf("Unable to update ExternalIPs for service %v. Details: %v",
+		glog.Errorf("Unable to update ExternalIPs for service '%v'. Details: %v",
 			svc.ObjectMeta, err)
 	}
 }
@@ -253,26 +253,26 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
-				glog.V(3).Infof("Ipclaim created %v", claim.Metadata.Name)
+				glog.V(3).Infof("IP claim '%v' was created", claim.Metadata.Name)
 				key, err := cache.MetaNamespaceKeyFunc(claim)
 				if err != nil {
-					glog.Errorf("Error getting key %v", err)
+					glog.Errorf("Error getting key for IP claim: %v", err)
 				}
 				s.queue.Add(key)
 			},
 			UpdateFunc: func(_, cur interface{}) {
 				claim := cur.(*extensions.IpClaim)
-				glog.V(3).Infof("Ipclaim updated %v, resource version %v",
+				glog.V(3).Infof("IP claim '%v' was updated. Resource version: %v",
 					claim.Metadata.Name, claim.Metadata.ResourceVersion)
 				key, err := cache.MetaNamespaceKeyFunc(claim)
 				if err != nil {
-					glog.Errorf("Error getting key %v", err)
+					glog.Errorf("Error getting key for IP claim: %v", err)
 				}
 				s.queue.Add(key)
 			},
 			DeleteFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
-				glog.V(3).Infof("Ipclaim deleted %v, resource version %v",
+				glog.V(3).Infof("IP claim '%v' was deleted. Resource version: %v",
 					claim.Metadata.Name, claim.Metadata.ResourceVersion)
 			},
 		},
@@ -294,10 +294,10 @@ func (s *ipClaimScheduler) findAliveNodes(ipnodes []extensions.IpNode) (result [
 }
 
 func (s *ipClaimScheduler) worker() {
-	glog.V(1).Infof("Starting worker to process ip claims")
+	glog.V(1).Infof("Starting worker to process IP claims")
 	for {
 		key, quit := s.queue.Get()
-		glog.V(3).Infof("Got claim %v to process", key)
+		glog.V(3).Infof("Got IP claim '%v' to process", key)
 		if quit {
 			return
 		}
@@ -305,11 +305,11 @@ func (s *ipClaimScheduler) worker() {
 		if exists {
 			err := s.processIpClaim(item.(*extensions.IpClaim))
 			if err != nil {
-				glog.Errorf("Error processing claim %v", err)
+				glog.Errorf("Error processing IP claim: %v", err)
 				s.queue.Add(key)
 			}
 		}
-		glog.V(5).Infof("Processed claim %v", key)
+		glog.V(5).Infof("Processing of IP claim '%v' was completed", key)
 		s.queue.Done(key)
 	}
 }
@@ -335,7 +335,7 @@ func (s *ipClaimScheduler) processOldService(svc *v1.Service) {
 func (s *ipClaimScheduler) getIPClaimPoolList () *extensions.IpClaimPoolList {
 	pools, err := s.ExtensionsClientset.IPClaimPools().List(api.ListOptions{})
 	if err != nil {
-		glog.Errorf("Error while retrieving list of IP pools. Details: %v", err)
+		glog.Errorf("Error retrieving list of IP pools. Details: %v", err)
 	}
 	return pools
 }
@@ -348,7 +348,7 @@ func (s *ipClaimScheduler) deleteIPClaimAndAllocation (ip string, pools *extensi
 		glog.V(2).Infof("Try to update IP pool with object %v", p)
 		_, err := s.ExtensionsClientset.IPClaimPools().Update(&p)
 		if err != nil {
-			glog.Errorf("Unable to update the pool '%v'. Details: %v", p.Metadata.Name, err)
+			glog.Errorf("Unable to update IP pool '%v'. Details: %v", p.Metadata.Name, err)
 		}
 	} else {
 		deleteIPClaim(s.ExtensionsClientset, ip, s.DefaultMask)
@@ -374,10 +374,10 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
 	ipnode := s.getNode(liveNodes)
 	claim.Metadata.SetLabels(map[string]string{"ipnode": ipnode.Metadata.Name})
 	claim.Spec.NodeName = ipnode.Metadata.Name
-	glog.V(3).Infof("Scheduling claim %v on a node %v",
+	glog.V(3).Infof("Scheduling IP claim '%v' on a node '%v'",
 		claim.Metadata.Name, claim.Spec.NodeName)
 	claim, err = s.ExtensionsClientset.IPClaims().Update(claim)
-	glog.V(3).Infof("Claim %v updated with node %v. Resource version %v",
+	glog.V(3).Infof("IP claim '%v' was updated with node '%v'. Resource version: %v",
 		claim.Metadata.Name, claim.Spec.NodeName, claim.Metadata.ResourceVersion)
 	return err
 }
@@ -390,7 +390,7 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time
 		case <-ticker:
 			ipnodes, err := s.ExtensionsClientset.IPNodes().List(api.ListOptions{})
 			if err != nil {
-				glog.Errorf("Error in monitor ip-nodes %v", err)
+				glog.Errorf("Error getting IP nodes: %v", err)
 			}
 
 			for _, ipnode := range ipnodes.Items {
@@ -400,13 +400,13 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time
 				if version < curVersion {
 					s.observedGeneration[name] = curVersion
 					s.liveSync.Lock()
-					glog.V(3).Infof("Ipnode %v is alive. Versions %v - %v",
+					glog.V(3).Infof("IP node '%v' is alive. Versions: %v - %v",
 						name, version, curVersion)
 					s.liveIpNodes[name] = struct{}{}
 					s.liveSync.Unlock()
 				} else {
 					s.liveSync.Lock()
-					glog.V(3).Infof("Ipnode %v is dead. Versions %v - %v",
+					glog.V(3).Infof("IP node '%v' is dead. Versions: %v - %v",
 						name, version, curVersion)
 					delete(s.liveIpNodes, name)
 					s.liveSync.Unlock()
@@ -417,16 +417,16 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time
 						},
 					)
 					if err != nil {
-						glog.Errorf("Error fetching list of claims: %v", err)
+						glog.Errorf("Error fetching list of IP claims: %v", err)
 						break
 					}
 					for _, ipclaim := range ipclaims.Items {
 						// TODO don't update - send to queue for rescheduling instead
-						glog.Infof("Sending ipclaim %v for rescheduling. CIDR %v, Previous node %v",
+						glog.Infof("Sending IP claim '%v' for rescheduling. CIDR '%v', previous node '%v'",
 							ipclaim.Metadata.Name, ipclaim.Spec.Cidr, ipclaim.Spec.NodeName)
 						key, err := cache.MetaNamespaceKeyFunc(&ipclaim)
 						if err != nil {
-							glog.Errorf("Error getting key %v", err)
+							glog.Errorf("Error getting key for IP claim: %v", err)
 						} else {
 							s.queue.Add(key)
 						}
@@ -469,14 +469,14 @@ func updatePoolAllocation(ext extensions.ExtensionsClientset, pool *extensions.I
 		pool.Spec.Allocated = map[string]string{ip: claimName}
 	}
 
-	glog.V(2).Infof("Update pool with object %v", pool)
+	glog.V(2).Infof("Update IP pool with object %v", pool)
 	_, err := ext.IPClaimPools().Update(pool)
 	return err
 }
 
 func addServiceExternalIP(svc *v1.Service, kcs kubernetes.Interface, ip string) error {
 	glog.V(5).Infof(
-		"Try to update service's %v externalIPs list with address %v",
+		"Try to update externalIPs list of service '%v' with IP address '%v'",
 		svc.ObjectMeta.Name, ip,
 	)
 	svc.Spec.ExternalIPs = append(svc.Spec.ExternalIPs, ip)
@@ -497,7 +497,7 @@ func makeIPClaim(ip, mask string) *extensions.IpClaim {
 	key := strings.Join([]string{strings.Join(ipParts, "-"), mask}, "-")
 	cidr := strings.Join([]string{ip, mask}, "/")
 
-	glog.V(2).Infof("Creating ipclaim %v", key)
+	glog.V(2).Infof("Creating IP claim '%v'", key)
 
 	ipclaim := &extensions.IpClaim{
 		Metadata: api.ObjectMeta{Name: key},
@@ -510,9 +510,9 @@ func deleteIPClaim(ext extensions.ExtensionsClientset, ip, mask string) {
 	ipParts := strings.Split(ip, ".")
 	key := strings.Join([]string{strings.Join(ipParts, "-"), mask}, "-")
 
-	glog.V(2).Infof("Deleting ipclaim %v", key)
+	glog.V(2).Infof("Deleting IP claim '%v'", key)
 	err := ext.IPClaims().Delete(key, &api.DeleteOptions{})
 	if err != nil {
-		glog.Errorf("Unable to delete %v. Error %v", ip, err)
+		glog.Errorf("Unable to delete IP claim '%v'. Details: %v", ip, err)
 	}
 }
