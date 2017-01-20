@@ -346,7 +346,7 @@ func (s *ipClaimScheduler) deleteIPClaimAndAllocation (ip string, pools *extensi
 		delete(p.Spec.Allocated, ip)
 
 		glog.V(2).Infof("Try to update IP pool with object %v", p)
-		_, err := s.ExtensionsClientset.IPClaimPools().Update(&p)
+		_, err := s.ExtensionsClientset.IPClaimPools().Update(p)
 		if err != nil {
 			glog.Errorf("Unable to update IP pool '%v'. Details: %v", p.Metadata.Name, err)
 		}
