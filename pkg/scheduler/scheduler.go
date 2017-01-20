@@ -484,8 +484,8 @@ func addServiceExternalIP(svc *v1.Service, kcs kubernetes.Interface, ip string) 
 	return err
 }
 
-func tryCreateIPClaim(ext extensions.ExtensionsClientset, new_claim *extensions.IpClaim) error {
-	_, err := ext.IPClaims().Create(new_claim)
+func tryCreateIPClaim(ext extensions.ExtensionsClientset, ipclaim *extensions.IpClaim) error {
+	_, err := ext.IPClaims().Create(ipclaim)
 	if apierrors.IsAlreadyExists(err) {
 		return nil
 	}
