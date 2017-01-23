@@ -102,7 +102,7 @@ const (
 )
 
 type ipClaimChange struct {
-	claim   extensions.IpClaim
+	claim   *extensions.IpClaim
 	change  ChangeType
 }
 
@@ -361,7 +361,7 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 	}
 }
 
-func (s *ipClaimScheduler) addClaimChangeRequest(claim extensions.IpClaim, change ChangeType) {
+func (s *ipClaimScheduler) addClaimChangeRequest(claim *extensions.IpClaim, change ChangeType) {
 	req := ipClaimChange{
 		change: change,
 		claim:  claim,
