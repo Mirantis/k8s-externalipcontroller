@@ -357,7 +357,7 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 			}
 		}
 		glog.V(3).Infof("Processing of IP claim '%v' change request was completed", claim.Metadata.Name)
-		s.changeQueue.Done(claim.Metadata.Name)
+		s.changeQueue.Done(req)
 	}
 }
 
