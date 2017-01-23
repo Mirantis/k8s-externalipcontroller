@@ -332,7 +332,7 @@ func (s *ipClaimScheduler) processOldService(svc *v1.Service) {
 	}
 }
 
-func (s *ipClaimScheduler) getIPClaimPoolList () *extensions.IpClaimPoolList {
+func (s *ipClaimScheduler) getIPClaimPoolList() *extensions.IpClaimPoolList {
 	pools, err := s.ExtensionsClientset.IPClaimPools().List(api.ListOptions{})
 	if err != nil {
 		glog.Errorf("Error retrieving list of IP pools. Details: %v", err)
@@ -340,7 +340,7 @@ func (s *ipClaimScheduler) getIPClaimPoolList () *extensions.IpClaimPoolList {
 	return pools
 }
 
-func (s *ipClaimScheduler) deleteIPClaimAndAllocation (ip string, pools *extensions.IpClaimPoolList) {
+func (s *ipClaimScheduler) deleteIPClaimAndAllocation(ip string, pools *extensions.IpClaimPoolList) {
 	if p := poolByAllocatedIP(ip, pools); p != nil {
 		deleteIPClaim(s.ExtensionsClientset, ip, strings.Split(p.Spec.CIDR, "/")[1])
 		delete(p.Spec.Allocated, ip)
