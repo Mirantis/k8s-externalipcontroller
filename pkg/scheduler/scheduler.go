@@ -142,6 +142,7 @@ func (s *ipClaimScheduler) Run(stop chan struct{}) {
 	go s.claimWatcher(stop)
 	<-stop
 	s.queue.Close()
+	s.changeQueue.Close()
 }
 
 // serviceWatcher creates/deletes IPClaim based on requirements from
@@ -331,8 +332,9 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 		if quit {
 			return
 		}
-		claim := req.(ipClaimChange).claim
-		switch req.(ipClaimChange).change {
+		changeReq := req.(*ipClaimChange)
+		claim := changeReq.claim
+		switch changeReq.change {
 		case Create:
 			claim, err := client.Create(claim)
 			if apierrors.IsAlreadyExists(err) {
@@ -362,7 +364,7 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 }
 
 func (s *ipClaimScheduler) addClaimChangeRequest(claim *extensions.IpClaim, change ChangeType) {
-	req := ipClaimChange{
+	req := &ipClaimChange{
 		change: change,
 		claim:  claim,
 	}
