@@ -399,7 +399,40 @@ func (s *ipClaimScheduler) deleteIPClaimAndAllocation(ip string, pools *extensio
 	}
 }
 
+// returns list of owner references that are relevant at the moment
+func (s *ipClaimScheduler) ownersAlive(claim *extensions.IpClaim) []api.OwnerReference {
+	// only services can be the claim owners for now
+	owners := []api.OwnerReference{}
+	for _, owner := range claim.Metadata.OwnerReferences {
+		_, exists, err := s.serviceStore.GetByKey(owner.Name)
+		if err != nil {
+			glog.Errorf("Checking claim '%v' owners: error getting service '%v' from cache: %v", claim.Metadata.Name, owner.Name, err)
+		}
+		if !exists {
+			_, err := s.Clientset.Core().Services(api.NamespaceAll).Get(owner.Name)
+			if apierrors.IsNotFound(err) {
+				glog.V(5).Infof("Checking claim '%v' owners: service '%v' does not exist", claim.Metadata.Name, owner.Name)
+				continue
+			}
+		}
+		owners = append(owners, owner)
+	}
+	return owners
+}
+
 func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
+	ownersAlive := s.ownersAlive(claim)
+	if len(ownersAlive) == 0 {
+		// all owner links are irrelevant
+		pools := s.getIPClaimPoolList()
+		s.deleteIPClaimAndAllocation(strings.Split(claim.Spec.Cidr, "/")[0], pools)
+		return nil
+	} else if len(ownersAlive) < len(claim.Metadata.OwnerReferences) {
+		// some owner links are irrelevant
+		claim.Metadata.OwnerReferences = ownersAlive
+		s.addClaimChangeRequest(claim, cache.Updated)
+	}
+
 	if claim.Spec.NodeName != "" && s.isLive(claim.Spec.NodeName) {
 		return nil
 	}
