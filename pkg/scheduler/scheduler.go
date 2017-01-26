@@ -93,19 +93,6 @@ func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.
 
 type nodeFilter func([]*extensions.IpNode) *extensions.IpNode
 
-type ChangeType int
-
-const (
-	Create ChangeType = iota
-	Update
-	Delete
-)
-
-type ipClaimChange struct {
-	claim   *extensions.IpClaim
-	change  ChangeType
-}
-
 type ipClaimScheduler struct {
 	Config              *rest.Config
 	Clientset           kubernetes.Interface
@@ -191,7 +178,7 @@ func (s *ipClaimScheduler) processExternalIPs(svc *v1.Service) {
 			foundAuto = true
 			continue
 		}
-		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask), Create)
+		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask), cache.Added)
 	}
 
 	if annotated := checkAnnotation(svc); annotated && !foundAuto {
@@ -240,7 +227,7 @@ func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service, poolList *ext
 	ipclaim.Metadata.SetLabels(
 		map[string]string{"ip-pool-name": pool.Metadata.Name})
 
-	s.addClaimChangeRequest(ipclaim, Create)
+	s.addClaimChangeRequest(ipclaim, cache.Added)
 
 	err := updatePoolAllocation(s.ExtensionsClientset, &pool, freeIP, ipclaim.Metadata.Name)
 	if err != nil {
@@ -332,10 +319,10 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 		if quit {
 			return
 		}
-		changeReq := req.(*ipClaimChange)
-		claim := changeReq.claim
-		switch changeReq.change {
-		case Create:
+		changeReq := req.(*cache.Delta)
+		claim := changeReq.Object.(*extensions.IpClaim)
+		switch changeReq.Type {
+		case cache.Added:
 			claim, err := client.Create(claim)
 			if apierrors.IsAlreadyExists(err) {
 				glog.V(3).Infof("IP claim '%v' exists already", claim.Metadata.Name)
@@ -344,7 +331,7 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 			} else {
 				glog.Errorf("Unable to create IP claim '%v'. Details: %v", claim.Metadata.Name, err)
 			}
-		case Update:
+		case cache.Updated:
 			claim, err := client.Update(claim)
 			if err == nil {
 				glog.V(3).Infof("IP claim '%v' was updated with node '%v'. Resource version: %v",
@@ -352,7 +339,7 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 			} else {
 				glog.Errorf("Unable to update IP claim '%v'. Details: %v", claim.Metadata.Name, err)
 			}
-		case Delete:
+		case cache.Deleted:
 			err := client.Delete(claim.Metadata.Name, &api.DeleteOptions{})
 			if err != nil {
 				glog.Errorf("Unable to delete IP claim '%v'. Details: %v", claim.Metadata.Name, err)
@@ -363,10 +350,10 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 	}
 }
 
-func (s *ipClaimScheduler) addClaimChangeRequest(claim *extensions.IpClaim, change ChangeType) {
-	req := &ipClaimChange{
-		change: change,
-		claim:  claim,
+func (s *ipClaimScheduler) addClaimChangeRequest(claim *extensions.IpClaim, change cache.DeltaType) {
+	req := &cache.Delta{
+		Object: claim,
+		Type:   change,
 	}
 	s.changeQueue.Add(req)
 }
@@ -399,7 +386,7 @@ func (s *ipClaimScheduler) getIPClaimPoolList() *extensions.IpClaimPoolList {
 
 func (s *ipClaimScheduler) deleteIPClaimAndAllocation(ip string, pools *extensions.IpClaimPoolList) {
 	if p := poolByAllocatedIP(ip, pools); p != nil {
-		s.addClaimChangeRequest(makeIPClaim(ip, strings.Split(p.Spec.CIDR, "/")[1]), Delete)
+		s.addClaimChangeRequest(makeIPClaim(ip, strings.Split(p.Spec.CIDR, "/")[1]), cache.Deleted)
 		delete(p.Spec.Allocated, ip)
 
 		glog.V(2).Infof("Try to update IP pool with object %v", p)
@@ -408,7 +395,7 @@ func (s *ipClaimScheduler) deleteIPClaimAndAllocation(ip string, pools *extensio
 			glog.Errorf("Unable to update IP pool '%v'. Details: %v", p.Metadata.Name, err)
 		}
 	} else {
-		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask), Delete)
+		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask), cache.Deleted)
 	}
 }
 
@@ -433,7 +420,7 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
 	claim.Spec.NodeName = ipnode.Metadata.Name
 	glog.V(3).Infof("Scheduling IP claim '%v' on a node '%v'",
 		claim.Metadata.Name, claim.Spec.NodeName)
-	s.addClaimChangeRequest(claim, Update)
+	s.addClaimChangeRequest(claim, cache.Updated)
 	return nil
 }
 
