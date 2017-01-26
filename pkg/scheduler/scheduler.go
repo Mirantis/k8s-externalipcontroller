@@ -178,7 +178,7 @@ func (s *ipClaimScheduler) processExternalIPs(svc *v1.Service) {
 			foundAuto = true
 			continue
 		}
-		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask), cache.Added)
+		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask, svc), cache.Added)
 	}
 
 	if annotated := checkAnnotation(svc); annotated && !foundAuto {
@@ -223,7 +223,7 @@ func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service, poolList *ext
 
 	mask := strings.Split(pool.Spec.CIDR, "/")[1]
 
-	ipclaim := makeIPClaim(freeIP, mask)
+	ipclaim := makeIPClaim(freeIP, mask, svc)
 	ipclaim.Metadata.SetLabels(
 		map[string]string{"ip-pool-name": pool.Metadata.Name})
 
@@ -386,7 +386,7 @@ func (s *ipClaimScheduler) getIPClaimPoolList() *extensions.IpClaimPoolList {
 
 func (s *ipClaimScheduler) deleteIPClaimAndAllocation(ip string, pools *extensions.IpClaimPoolList) {
 	if p := poolByAllocatedIP(ip, pools); p != nil {
-		s.addClaimChangeRequest(makeIPClaim(ip, strings.Split(p.Spec.CIDR, "/")[1]), cache.Deleted)
+		s.addClaimChangeRequest(makeIPClaim(ip, strings.Split(p.Spec.CIDR, "/")[1], nil), cache.Deleted)
 		delete(p.Spec.Allocated, ip)
 
 		glog.V(2).Infof("Try to update IP pool with object %v", p)
@@ -395,7 +395,7 @@ func (s *ipClaimScheduler) deleteIPClaimAndAllocation(ip string, pools *extensio
 			glog.Errorf("Unable to update IP pool '%v'. Details: %v", p.Metadata.Name, err)
 		}
 	} else {
-		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask), cache.Deleted)
+		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask, nil), cache.Deleted)
 	}
 }
 
@@ -526,15 +526,25 @@ func addServiceExternalIP(svc *v1.Service, kcs kubernetes.Interface, ip string) 
 	return err
 }
 
-func makeIPClaim(ip, mask string) *extensions.IpClaim {
+func makeIPClaim(ip, mask string, svc *v1.Service) *extensions.IpClaim {
 	ipParts := strings.Split(ip, ".")
 	key := strings.Join([]string{strings.Join(ipParts, "-"), mask}, "-")
 	cidr := strings.Join([]string{ip, mask}, "/")
 
 	glog.V(2).Infof("Creating IP claim '%v'", key)
 
+	meta := api.ObjectMeta{Name: key}
+	if svc != nil {
+		svc_key, err := cache.MetaNamespaceKeyFunc(svc)
+		if err != nil {
+			return nil
+		}
+		ownerRef := api.OwnerReference{APIVersion: "v1", Kind: "Service", Name: svc.Name, UID: svc_key, Controller: false}
+		meta.OwnerReferences = []api.OwnerReference{ownerRef}
+	}
+
 	ipclaim := &extensions.IpClaim{
-		Metadata: api.ObjectMeta{Name: key},
+		Metadata: meta,
 		Spec:     extensions.IpClaimSpec{Cidr: cidr},
 	}
 	return ipclaim
