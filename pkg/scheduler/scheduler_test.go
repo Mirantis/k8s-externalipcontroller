@@ -39,19 +39,22 @@ func TestServiceWatcher(t *testing.T) {
 		DefaultMask:         "24",
 		serviceSource:       lw,
 		ExtensionsClientset: ext,
+		changeQueue:         workqueue.NewQueue(),
 	}
 
 	ext.Ipclaimpools.On("List", mock.Anything).Return(&extensions.IpClaimPoolList{}, nil)
 
 	ext.Ipclaims.On("Create", mock.Anything).Return(nil)
+	go s.claimChangeWorker()
 	go s.serviceWatcher(stop)
 	defer close(stop)
+	defer s.changeQueue.Close()
 
 	svc := &v1.Service{
 		ObjectMeta: v1.ObjectMeta{Name: "test0"},
 		Spec:       v1.ServiceSpec{ExternalIPs: []string{"10.10.0.2"}}}
 	lw.Add(svc)
-	// let controller to process all services
+	// let controller process all services
 	utils.EventualCondition(t, time.Second*1, func() bool {
 		return assert.ObjectsAreEqual(len(ext.Ipclaims.Calls), 1)
 	}, "Unexpected call count to ipclaims", ext.Ipclaims.Calls)
@@ -88,6 +91,7 @@ func TestAutoAllocationForServices(t *testing.T) {
 		serviceSource:       lw,
 		ExtensionsClientset: ext,
 		Clientset:           fakeClientset,
+		changeQueue:         workqueue.NewQueue(),
 	}
 
 	poolCIDR := "192.168.16.248/29"
@@ -108,8 +112,10 @@ func TestAutoAllocationForServices(t *testing.T) {
 	ext.Ipclaims.On("Delete", "192-168-16-250-29", mock.Anything).Return(nil)
 	ext.Ipclaims.On("Delete", "10-20-0-2-24", mock.Anything).Return(nil)
 
+	go s.claimChangeWorker()
 	go s.serviceWatcher(stop)
 	defer close(stop)
+	defer s.changeQueue.Close()
 
 	lw.Add(&svc)
 
@@ -195,10 +201,13 @@ func TestClaimNotCreatedIfExternalIPIsAutoAllocated(t *testing.T) {
 		DefaultMask:         "24",
 		serviceSource:       lw,
 		ExtensionsClientset: ext,
+		changeQueue:         workqueue.NewQueue(),
 	}
 
+	go s.claimChangeWorker()
 	go s.serviceWatcher(stop)
 	defer close(stop)
+	defer s.changeQueue.Close()
 
 	svc := v1.Service{
 		ObjectMeta: v1.ObjectMeta{
@@ -259,10 +268,13 @@ func TestAutoAllocatedOnServiceUpdate(t *testing.T) {
 		serviceSource:       lw,
 		ExtensionsClientset: ext,
 		Clientset:           fakeClientset,
+		changeQueue:         workqueue.NewQueue(),
 	}
 
+	go s.claimChangeWorker()
 	go s.serviceWatcher(stop)
 	defer close(stop)
+	defer s.changeQueue.Close()
 
 	lw.Add(&svc)
 
@@ -297,12 +309,17 @@ func TestClaimWatcher(t *testing.T) {
 		ExtensionsClientset: ext,
 		liveIpNodes:         make(map[string]struct{}),
 		queue:               workqueue.NewQueue(),
+		changeQueue:         workqueue.NewQueue(),
 	}
 	s.getNode = s.getFairNode
+
 	go s.worker()
+	go s.claimChangeWorker()
 	go s.claimWatcher(stop)
 	defer close(stop)
 	defer s.queue.Close()
+	defer s.changeQueue.Close()
+
 	claim := &extensions.IpClaim{
 		Metadata: api.ObjectMeta{Name: "10.10.0.2-24"},
 		Spec:     extensions.IpClaimSpec{Cidr: "10.10.0.2/24"},
