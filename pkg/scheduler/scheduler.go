@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/1.5/pkg/watch"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/cache"
+	"github.com/docker/docker/container"
 )
 
 const (
@@ -246,7 +247,7 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 	store, controller := cache.NewInformer(
 		s.claimSource,
 		&extensions.IpClaim{},
-		0,
+		10 * time.Second,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
@@ -323,16 +324,37 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 		claim := changeReq.Object.(*extensions.IpClaim)
 		switch changeReq.Type {
 		case cache.Added:
-			claim, err := client.Create(claim)
+			_, err := client.Create(claim)
 			if apierrors.IsAlreadyExists(err) {
 				glog.V(3).Infof("IP claim '%v' exists already", claim.Metadata.Name)
+				existing, err := client.Get(claim.Metadata.Name)
+				if err != nil {
+					glog.Errorf("Unable to get IP claim '%v'. Details: %v", claim.Metadata.Name, err)
+					s.changeQueue.Add(changeReq)
+				}
+				newOwnerRef := claim.Metadata.OwnerReferences[0]
+				existOwnerRefs := existing.Metadata.OwnerReferences
+				for r := range existOwnerRefs {
+					if newOwnerRef.UID == existOwnerRefs[r].UID {
+						glog.V(3).Infof("Service '%v' is referenced in IP claim '%v' already",
+							newOwnerRef.UID, claim.Metadata.Name)
+						newOwnerRef = nil
+						break
+					}
+				}
+				if newOwnerRef != nil {
+					existing.Metadata.OwnerReferences = append(existOwnerRefs, newOwnerRef)
+					s.addClaimChangeRequest(existing, cache.Updated)
+					glog.V(3).Infof("IP claim '%v' is to be updated with reference to service '%v'",
+						claim.Metadata.Name, newOwnerRef.UID)
+				}
 			} else if err == nil {
 				glog.V(3).Infof("IP claim '%v' was created", claim.Metadata.Name)
 			} else {
 				glog.Errorf("Unable to create IP claim '%v'. Details: %v", claim.Metadata.Name, err)
 			}
 		case cache.Updated:
-			claim, err := client.Update(claim)
+			_, err := client.Update(claim)
 			if err == nil {
 				glog.V(3).Infof("IP claim '%v' was updated with node '%v'. Resource version: %v",
 					claim.Metadata.Name, claim.Spec.NodeName, claim.Metadata.ResourceVersion)
