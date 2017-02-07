@@ -394,8 +394,35 @@ func (s *ipClaimScheduler) processOldService(svc *v1.Service) {
 	for _, ip := range svc.Spec.ExternalIPs {
 		if _, ok := refs[ip]; !ok {
 			s.deleteIPClaimAndAllocation(ip, pools)
+		} else {
+			claim, err := s.getIPClaimByIP(ip, pools)
+			if err != nil {
+				glog.Errorf("Error getting IP claim with key '%v'. Details: %v", ip, err)
+				continue
+			}
+			refs := claim.Metadata.OwnerReferences
+			for r := range refs {
+				if refs[r].Name == svc.Name {
+					refs = append(refs[:r], refs[r+1:]...)
+					break
+				}
+			}
+			claim.Metadata.OwnerReferences = refs
+			s.addClaimChangeRequest(claim, cache.Updated)
 		}
 	}
+}
+
+func (s *ipClaimScheduler) getIPClaimByIP(ip string, pools *extensions.IpClaimPoolList) (*extensions.IpClaim, error) {
+	mask := ""
+	if p := poolByAllocatedIP(ip, pools); p != nil {
+		mask = strings.Split(p.Spec.CIDR, "/")[1]
+	} else {
+		mask = s.DefaultMask
+	}
+	ipParts := strings.Split(ip, ".")
+	key := strings.Join([]string{strings.Join(ipParts, "-"), mask}, "-")
+	return s.ExtensionsClientset.IPClaims().Get(key)
 }
 
 func (s *ipClaimScheduler) getIPClaimPoolList() *extensions.IpClaimPoolList {
