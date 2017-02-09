@@ -35,7 +35,7 @@ import (
 	"k8s.io/client-go/1.5/pkg/watch"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/cache"
-	"github.com/docker/docker/container"
+	"k8s.io/client-go/1.5/pkg/types"
 )
 
 const (
@@ -326,6 +326,7 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 		case cache.Added:
 			_, err := client.Create(claim)
 			if apierrors.IsAlreadyExists(err) {
+				// Let's add new owner ref to the owner ref list of the existing IP claim
 				glog.V(3).Infof("IP claim '%v' exists already", claim.Metadata.Name)
 				existing, err := client.Get(claim.Metadata.Name)
 				if err != nil {
@@ -334,15 +335,16 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 				}
 				newOwnerRef := claim.Metadata.OwnerReferences[0]
 				existOwnerRefs := existing.Metadata.OwnerReferences
+				alreadyThere := false
 				for r := range existOwnerRefs {
 					if newOwnerRef.UID == existOwnerRefs[r].UID {
-						glog.V(3).Infof("Service '%v' is referenced in IP claim '%v' already",
+						glog.V(5).Infof("Service '%v' is referenced in IP claim '%v' already",
 							newOwnerRef.UID, claim.Metadata.Name)
-						newOwnerRef = nil
+						alreadyThere = true
 						break
 					}
 				}
-				if newOwnerRef != nil {
+				if !alreadyThere {
 					existing.Metadata.OwnerReferences = append(existOwnerRefs, newOwnerRef)
 					s.addClaimChangeRequest(existing, cache.Updated)
 					glog.V(3).Infof("IP claim '%v' is to be updated with reference to service '%v'",
@@ -394,21 +396,6 @@ func (s *ipClaimScheduler) processOldService(svc *v1.Service) {
 	for _, ip := range svc.Spec.ExternalIPs {
 		if _, ok := refs[ip]; !ok {
 			s.deleteIPClaimAndAllocation(ip, pools)
-		} else {
-			claim, err := s.getIPClaimByIP(ip, pools)
-			if err != nil {
-				glog.Errorf("Error getting IP claim with key '%v'. Details: %v", ip, err)
-				continue
-			}
-			refs := claim.Metadata.OwnerReferences
-			for r := range refs {
-				if refs[r].Name == svc.Name {
-					refs = append(refs[:r], refs[r+1:]...)
-					break
-				}
-			}
-			claim.Metadata.OwnerReferences = refs
-			s.addClaimChangeRequest(claim, cache.Updated)
 		}
 	}
 }
@@ -453,7 +440,7 @@ func (s *ipClaimScheduler) ownersAlive(claim *extensions.IpClaim) []api.OwnerRef
 	// only services can be the claim owners for now
 	owners := []api.OwnerReference{}
 	for _, owner := range claim.Metadata.OwnerReferences {
-		_, exists, err := s.serviceStore.GetByKey(owner.Name)
+		_, exists, err := s.serviceStore.GetByKey(string(owner.UID))
 		if err != nil {
 			glog.Errorf("Checking claim '%v' owners: error getting service '%v' from cache: %v", claim.Metadata.Name, owner.Name, err)
 		}
@@ -621,7 +608,8 @@ func makeIPClaim(ip, mask string, svc *v1.Service) *extensions.IpClaim {
 		if err != nil {
 			return nil
 		}
-		ownerRef := api.OwnerReference{APIVersion: "v1", Kind: "Service", Name: svc.Name, UID: svc_key, Controller: false}
+		ctrl := false
+		ownerRef := api.OwnerReference{APIVersion: "v1", Kind: "Service", Name: svc.Name, UID: types.UID(svc_key), Controller: &ctrl}
 		meta.OwnerReferences = []api.OwnerReference{ownerRef}
 	}
 

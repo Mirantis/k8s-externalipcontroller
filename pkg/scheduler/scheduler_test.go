@@ -29,6 +29,8 @@ import (
 	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/v1"
 	fcache "k8s.io/client-go/1.5/tools/cache/testing"
+	"k8s.io/client-go/1.5/pkg/types"
+	"k8s.io/client-go/1.5/tools/cache"
 )
 
 func TestServiceWatcher(t *testing.T) {
@@ -303,15 +305,32 @@ func TestAutoAllocatedOnServiceUpdate(t *testing.T) {
 func TestClaimWatcher(t *testing.T) {
 	ext := fclient.NewFakeExtClientset()
 	lw := fcache.NewFakeControllerSource()
+	fss := cache.NewStore(cache.MetaNamespaceKeyFunc)
+
+	svc := v1.Service{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "some-svc",
+			Namespace: api.NamespaceDefault,
+		},
+		Spec: v1.ServiceSpec{
+			ExternalIPs: []string{"10.10.0.2"},
+		},
+	}
+	fss.Add(&svc)
+
 	stop := make(chan struct{})
 	s := ipClaimScheduler{
 		claimSource:         lw,
+		serviceStore:        fss,
 		ExtensionsClientset: ext,
 		liveIpNodes:         make(map[string]struct{}),
 		queue:               workqueue.NewQueue(),
 		changeQueue:         workqueue.NewQueue(),
 	}
 	s.getNode = s.getFairNode
+
+	poolList := &extensions.IpClaimPoolList{Items: []extensions.IpClaimPool{}}
+	ext.Ipclaimpools.On("List", mock.Anything).Return(poolList, nil)
 
 	go s.worker()
 	go s.claimChangeWorker()
@@ -320,11 +339,14 @@ func TestClaimWatcher(t *testing.T) {
 	defer s.queue.Close()
 	defer s.changeQueue.Close()
 
+	ctrl := false
+	ownerRef := api.OwnerReference{APIVersion: "v1", Kind: "Service", Name: "some-svc", UID: types.UID("default/some-svc"), Controller: &ctrl}
 	claim := &extensions.IpClaim{
-		Metadata: api.ObjectMeta{Name: "10.10.0.2-24"},
+		Metadata: api.ObjectMeta{Name: "10.10.0.2-24", OwnerReferences: []api.OwnerReference{ownerRef}},
 		Spec:     extensions.IpClaimSpec{Cidr: "10.10.0.2/24"},
 	}
 	lw.Add(claim)
+
 	ipnodesList := &extensions.IpNodeList{
 		Items: []extensions.IpNode{
 			{
@@ -332,11 +354,10 @@ func TestClaimWatcher(t *testing.T) {
 			},
 		},
 	}
-	s.liveSync.Lock()
 	for _, node := range ipnodesList.Items {
 		s.liveIpNodes[node.Metadata.Name] = struct{}{}
 	}
-	s.liveSync.Unlock()
+
 	ext.Ipnodes.On("List", mock.Anything).Return(ipnodesList, nil)
 	ext.Ipclaims.On("Update", mock.Anything).Return(nil)
 	utils.EventualCondition(t, time.Second*1, func() bool {
