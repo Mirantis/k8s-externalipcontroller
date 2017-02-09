@@ -38,7 +38,6 @@ import (
 	"k8s.io/client-go/1.5/pkg/util/intstr"
 	"k8s.io/client-go/1.5/pkg/util/wait"
 	"k8s.io/client-go/1.5/pkg/watch"
-	"github.com/containernetworking/cni/pkg/ns"
 )
 
 var _ = Describe("Basic", func() {
