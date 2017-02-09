@@ -701,7 +701,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.107.10.10/24")).Should(BeNil())
 
 		By("verifying that nginx service reachable using any externalIP")
-		verifyServiceReachable(nginxPort, externalIPs1, externalIPs2...)
+		verifyServiceReachable(nginxPort, append(externalIPs1, externalIPs2...)...)
 
 		By("checking quantity of allocated ip claims")
 		claims := getAllocatedClaims(ext)
@@ -723,7 +723,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("verifying that claim allocation has changed (nginx2 ip claims were removed)")
-		Consistently(func() map[string]string {
+		Consistently(func() int {
 			return len(getAllocatedClaims(ext))
 		}, 15*time.Second, 1*time.Second).Should(BeEquivalentTo(2))
 
