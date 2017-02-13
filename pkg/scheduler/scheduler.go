@@ -451,6 +451,9 @@ func (s *ipClaimScheduler) ownersAlive(claim *extensions.IpClaim) []api.OwnerRef
 				glog.V(5).Infof("Checking claim '%v' owners: service '%v' does not exist", claim.Metadata.Name, owner.Name)
 				continue
 			}
+			if err != nil {
+				glog.Errorf("Checking claim '%v' owners: service '%v' get error: %v", claim.Metadata.Name, owner.Name, err)
+			}
 		}
 		owners = append(owners, owner)
 	}
