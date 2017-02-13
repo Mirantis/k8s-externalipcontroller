@@ -724,7 +724,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())*/
 
 		By("verifying that claim allocation has changed (nginx2 ip claims were removed)")
-		Consistently(func() int {
+		Eventually(func() int {
 			return len(getAllocatedClaims(ext))
 		}, 15*time.Second, 1*time.Second).Should(BeEquivalentTo(2))
 
@@ -733,7 +733,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("deleting service and verifying that all IP claims were removed")
 		err = clientset.Core().Services(ns.Name).Delete(nginx1Name, &api.DeleteOptions{})
-		Consistently(func() int {
+		Eventually(func() int {
 			return len(getAllocatedClaims(ext))
 		}, 15*time.Second, 1*time.Second).Should(BeEquivalentTo(0))
 	})
