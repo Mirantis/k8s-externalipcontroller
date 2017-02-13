@@ -708,20 +708,20 @@ var _ = Describe("Third party objects", func() {
 		claims := getAllocatedClaims(ext)
 		Expect(len(claims)).To(BeNumerically("==", 3))
 
-/*		By("shuting down scheduler")
+		By("shuting down scheduler")
 		var zero int64 = 0
 		err = clientset.Core().Pods(ns.Name).Delete(scheduler.Name, &api.DeleteOptions{
 			GracePeriodSeconds: &zero,
 		})
-		Expect(err).NotTo(HaveOccurred())*/
+		Expect(err).NotTo(HaveOccurred())
 
 		By("deleting one of services")
 		err = clientset.Core().Services(ns.Name).Delete(nginx2Name, &api.DeleteOptions{})
 		Expect(err).NotTo(HaveOccurred())
 
-/*		By("starting scheduler again")
+		By("starting scheduler again")
 		_, err = clientset.Core().Pods(ns.Name).Create(scheduler)
-		Expect(err).NotTo(HaveOccurred())*/
+		Expect(err).NotTo(HaveOccurred())
 
 		By("verifying that claim allocation has changed (nginx2 ip claims were removed)")
 		Eventually(func() int {
