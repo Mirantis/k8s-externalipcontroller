@@ -684,24 +684,25 @@ var _ = Describe("Third party objects", func() {
 		}, time.Second * 30, 2 * time.Second).Should(BeNil())
 
 		By("deploying nginx pod and service with multiple external ips")
-		nginxName := "nginx1"
-		var nginxPort int32 = 2288
+		nginx1Name := "nginx1"
+		var nginx1Port int32 = 2288
 		_, network, _ = net.ParseCIDR("10.107.10.0/24")
 		Expect(err).NotTo(HaveOccurred())
 		externalIPs1 := []string{"10.107.10.2", "10.107.10.3"}
-		deployNginxPodAndService(nginxName, nginxPort, clientset, ns, externalIPs1)
+		deployNginxPodAndService(nginx1Name, nginx1Port, clientset, ns, externalIPs1)
 
 		By("deploying second nginx pod and service with multiple external ips")
-		nginxName = "nginx2"
-		nginxPort = 2289
+		nginx2Name := "nginx2"
+		var nginx2Port int32 = 2289
 		externalIPs2 := []string{"10.107.10.3", "10.107.10.4"}
-		deployNginxPodAndService(nginxName, nginxPort, clientset, ns, externalIPs2)
+		deployNginxPodAndService(nginx2Name, nginx2Port, clientset, ns, externalIPs2)
 
 		By("assigning ip from external ip pool to a node where test is running")
 		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.107.10.10/24")).Should(BeNil())
 
-		By("verifying that nginx service reachable using any externalIP")
-		verifyServiceReachable(nginxPort, append(externalIPs1, externalIPs2...)...)
+		By("verifying that both nginx services are reachable")
+		verifyServiceReachable(nginx1Port, externalIPs1...)
+		verifyServiceReachable(nginx2Port, externalIPs2...)
 
 		By("checking quantity of allocated ip claims")
 		claims := getAllocatedClaims(ext)
@@ -715,7 +716,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("deleting service and verifying that ips are purged from second controller")
-		err = clientset.Core().Services(ns.Name).Delete(nginxName, &api.DeleteOptions{})
+		err = clientset.Core().Services(ns.Name).Delete(nginx2Name, &api.DeleteOptions{})
 		Expect(err).NotTo(HaveOccurred())
 
 		By("starting scheduler again")
@@ -728,7 +729,13 @@ var _ = Describe("Third party objects", func() {
 		}, 15*time.Second, 1*time.Second).Should(BeEquivalentTo(2))
 
 		By("verifying that nginx service reachable using externalIPs of nginx1")
-		verifyServiceReachable(nginxPort, externalIPs1...)
+		verifyServiceReachable(nginx1Port, externalIPs1...)
+
+		By("deleting service and verifying that all IP claims were removed")
+		err = clientset.Core().Services(ns.Name).Delete(nginx1Name, &api.DeleteOptions{})
+		Consistently(func() int {
+			return len(getAllocatedClaims(ext))
+		}, 15*time.Second, 1*time.Second).Should(BeEquivalentTo(0))
 	})
 
 	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [Native]", func() {
