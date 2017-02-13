@@ -1148,7 +1148,7 @@ func newService(serviceName string, labels map[string]string, ports []v1.Service
 func deployNginxPodAndService(serviceName string, servicePort int32, clientset *kubernetes.Clientset, ns *v1.Namespace, externalIPs []string) {
 	nginxLabels := map[string]string{"app": "nginx"}
 	pod := newPod(
-		"nginx", "nginx", "gcr.io/google_containers/nginx-slim:0.7", nil, nginxLabels, false, false)
+		serviceName, "nginx", "gcr.io/google_containers/nginx-slim:0.7", nil, nginxLabels, false, false)
 	pod, err := clientset.Pods(ns.Name).Create(pod)
 	Expect(err).Should(BeNil())
 	testutils.WaitForReady(clientset, pod)
