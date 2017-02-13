@@ -445,6 +445,7 @@ func (s *ipClaimScheduler) ownersAlive(claim *extensions.IpClaim) []api.OwnerRef
 			glog.Errorf("Checking claim '%v' owners: error getting service '%v' from cache: %v", claim.Metadata.Name, owner.Name, err)
 		}
 		if !exists {
+			glog.V(5).Infof("Checking claim '%v' owners: service '%v' is not in cache", claim.Metadata.Name, owner.Name)
 			_, err := s.Clientset.Core().Services(api.NamespaceAll).Get(owner.Name)
 			if apierrors.IsNotFound(err) {
 				glog.V(5).Infof("Checking claim '%v' owners: service '%v' does not exist", claim.Metadata.Name, owner.Name)
@@ -453,6 +454,7 @@ func (s *ipClaimScheduler) ownersAlive(claim *extensions.IpClaim) []api.OwnerRef
 		}
 		owners = append(owners, owner)
 	}
+	glog.V(5).Infof("Checking claim '%v' owners: %v", claim.Metadata.Name, owners)
 	return owners
 }
 
