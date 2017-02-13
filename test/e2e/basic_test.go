@@ -726,7 +726,7 @@ var _ = Describe("Third party objects", func() {
 		By("verifying that claim allocation has changed (nginx2 ip claims were removed)")
 		Eventually(func() int {
 			return len(getAllocatedClaims(ext))
-		}, 15*time.Second, 1*time.Second).Should(BeEquivalentTo(2))
+		}, 30*time.Second, 1*time.Second).Should(BeEquivalentTo(2))
 
 		By("verifying that nginx service reachable using externalIPs of nginx1")
 		verifyServiceReachable(nginx1Port, externalIPs1...)
