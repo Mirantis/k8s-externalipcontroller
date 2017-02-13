@@ -442,17 +442,24 @@ func (s *ipClaimScheduler) ownersAlive(claim *extensions.IpClaim) []api.OwnerRef
 	for _, owner := range claim.Metadata.OwnerReferences {
 		_, exists, err := s.serviceStore.GetByKey(string(owner.UID))
 		if err != nil {
-			glog.Errorf("Checking claim '%v' owners: error getting service '%v' from cache: %v", claim.Metadata.Name, owner.Name, err)
+			glog.Errorf("Checking claim '%v' owners: error getting service '%v' from cache: %v", claim.Metadata.Name, owner.UID, err)
 		}
 		if !exists {
-			glog.V(5).Infof("Checking claim '%v' owners: service '%v' is not in cache", claim.Metadata.Name, owner.Name)
-			_, err := s.Clientset.Core().Services(api.NamespaceAll).Get(owner.Name)
+			glog.V(5).Infof("Checking claim '%v' owners: service '%v' is not in cache", claim.Metadata.Name, owner.UID)
+			ns_name := strings.Split(string(owner.UID), "/")
+			// "an empty namespace may not be set when a resource name is provided" error can be thrown when
+			// calling Services.Get w/o a namespace
+			if len(ns_name) == 2 {
+				_, err = s.Clientset.Core().Services(ns_name[0]).Get(ns_name[1])
+			} else {
+				_, err = s.Clientset.Core().Services(api.NamespaceAll).Get(owner.Name)
+			}
 			if apierrors.IsNotFound(err) {
-				glog.V(5).Infof("Checking claim '%v' owners: service '%v' does not exist", claim.Metadata.Name, owner.Name)
+				glog.V(5).Infof("Checking claim '%v' owners: service '%v' does not exist", claim.Metadata.Name, owner.UID)
 				continue
 			}
 			if err != nil {
-				glog.Errorf("Checking claim '%v' owners: service '%v' get error: %v", claim.Metadata.Name, owner.Name, err)
+				glog.Errorf("Checking claim '%v' owners: service '%v' get error: %v", claim.Metadata.Name, owner.UID, err)
 			}
 		}
 		owners = append(owners, owner)
