@@ -712,7 +712,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("verifying that scheduler pod is gone")
-		Consistently(func() error {
+		Eventually(func() error {
 			_, err = clientset.Core().Pods(ns.Name).Get(scheduler.Name)
 			if errors.IsNotFound(err) {
 				return nil
