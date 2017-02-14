@@ -704,16 +704,25 @@ var _ = Describe("Third party objects", func() {
 		verifyServiceReachable(nginx1Port, externalIPs1...)
 		verifyServiceReachable(nginx2Port, externalIPs2...)
 
-		By("checking quantity of allocated ip claims")
-		claims := getAllocatedClaims(ext)
-		Expect(len(claims)).To(BeNumerically("==", 3))
-
 		By("shuting down scheduler")
 		var zero int64 = 0
 		err = clientset.Core().Pods(ns.Name).Delete(scheduler.Name, &api.DeleteOptions{
 			GracePeriodSeconds: &zero,
 		})
 		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying that scheduler pod is gone")
+		Consistently(func() error {
+			_, err = clientset.Core().Pods(ns.Name).Get(scheduler.Name)
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}, 15*time.Second, 1*time.Second).Should(BeNil())
+
+		By("checking quantity of allocated ip claims")
+		claims := getAllocatedClaims(ext)
+		Expect(len(claims)).To(BeNumerically("==", 3))
 
 		By("deleting one of services")
 		err = clientset.Core().Services(ns.Name).Delete(nginx2Name, &api.DeleteOptions{})
