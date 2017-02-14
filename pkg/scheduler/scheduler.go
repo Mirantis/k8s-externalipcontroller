@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/1.5/pkg/watch"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/cache"
+	"k8s.io/client-go/1.5/pkg/types"
 )
 
 const (
@@ -178,7 +179,7 @@ func (s *ipClaimScheduler) processExternalIPs(svc *v1.Service) {
 			foundAuto = true
 			continue
 		}
-		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask), cache.Added)
+		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask, svc), cache.Added)
 	}
 
 	if annotated := checkAnnotation(svc); annotated && !foundAuto {
@@ -223,7 +224,7 @@ func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service, poolList *ext
 
 	mask := strings.Split(pool.Spec.CIDR, "/")[1]
 
-	ipclaim := makeIPClaim(freeIP, mask)
+	ipclaim := makeIPClaim(freeIP, mask, svc)
 	ipclaim.Metadata.SetLabels(
 		map[string]string{"ip-pool-name": pool.Metadata.Name})
 
@@ -246,7 +247,7 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 	store, controller := cache.NewInformer(
 		s.claimSource,
 		&extensions.IpClaim{},
-		0,
+		10 * time.Second,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
@@ -323,16 +324,39 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 		claim := changeReq.Object.(*extensions.IpClaim)
 		switch changeReq.Type {
 		case cache.Added:
-			claim, err := client.Create(claim)
+			_, err := client.Create(claim)
 			if apierrors.IsAlreadyExists(err) {
+				// Let's add new owner ref to the owner ref list of the existing IP claim
 				glog.V(3).Infof("IP claim '%v' exists already", claim.Metadata.Name)
+				existing, err := client.Get(claim.Metadata.Name)
+				if err != nil {
+					glog.Errorf("Unable to get IP claim '%v'. Details: %v", claim.Metadata.Name, err)
+					s.changeQueue.Add(changeReq)
+				}
+				newOwnerRef := claim.Metadata.OwnerReferences[0]
+				existOwnerRefs := existing.Metadata.OwnerReferences
+				alreadyThere := false
+				for r := range existOwnerRefs {
+					if newOwnerRef.UID == existOwnerRefs[r].UID {
+						glog.V(5).Infof("Service '%v' is referenced in IP claim '%v' already",
+							newOwnerRef.UID, claim.Metadata.Name)
+						alreadyThere = true
+						break
+					}
+				}
+				if !alreadyThere {
+					existing.Metadata.OwnerReferences = append(existOwnerRefs, newOwnerRef)
+					s.addClaimChangeRequest(existing, cache.Updated)
+					glog.V(3).Infof("IP claim '%v' is to be updated with reference to service '%v'",
+						claim.Metadata.Name, newOwnerRef.UID)
+				}
 			} else if err == nil {
 				glog.V(3).Infof("IP claim '%v' was created", claim.Metadata.Name)
 			} else {
 				glog.Errorf("Unable to create IP claim '%v'. Details: %v", claim.Metadata.Name, err)
 			}
 		case cache.Updated:
-			claim, err := client.Update(claim)
+			_, err := client.Update(claim)
 			if err == nil {
 				glog.V(3).Infof("IP claim '%v' was updated with node '%v'. Resource version: %v",
 					claim.Metadata.Name, claim.Spec.NodeName, claim.Metadata.ResourceVersion)
@@ -376,6 +400,18 @@ func (s *ipClaimScheduler) processOldService(svc *v1.Service) {
 	}
 }
 
+func (s *ipClaimScheduler) getIPClaimByIP(ip string, pools *extensions.IpClaimPoolList) (*extensions.IpClaim, error) {
+	mask := ""
+	if p := poolByAllocatedIP(ip, pools); p != nil {
+		mask = strings.Split(p.Spec.CIDR, "/")[1]
+	} else {
+		mask = s.DefaultMask
+	}
+	ipParts := strings.Split(ip, ".")
+	key := strings.Join([]string{strings.Join(ipParts, "-"), mask}, "-")
+	return s.ExtensionsClientset.IPClaims().Get(key)
+}
+
 func (s *ipClaimScheduler) getIPClaimPoolList() *extensions.IpClaimPoolList {
 	pools, err := s.ExtensionsClientset.IPClaimPools().List(api.ListOptions{})
 	if err != nil {
@@ -386,7 +422,7 @@ func (s *ipClaimScheduler) getIPClaimPoolList() *extensions.IpClaimPoolList {
 
 func (s *ipClaimScheduler) deleteIPClaimAndAllocation(ip string, pools *extensions.IpClaimPoolList) {
 	if p := poolByAllocatedIP(ip, pools); p != nil {
-		s.addClaimChangeRequest(makeIPClaim(ip, strings.Split(p.Spec.CIDR, "/")[1]), cache.Deleted)
+		s.addClaimChangeRequest(makeIPClaim(ip, strings.Split(p.Spec.CIDR, "/")[1], nil), cache.Deleted)
 		delete(p.Spec.Allocated, ip)
 
 		glog.V(2).Infof("Try to update IP pool with object %v", p)
@@ -395,11 +431,56 @@ func (s *ipClaimScheduler) deleteIPClaimAndAllocation(ip string, pools *extensio
 			glog.Errorf("Unable to update IP pool '%v'. Details: %v", p.Metadata.Name, err)
 		}
 	} else {
-		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask), cache.Deleted)
+		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask, nil), cache.Deleted)
 	}
 }
 
+// returns list of owner references that are relevant at the moment
+func (s *ipClaimScheduler) ownersAlive(claim *extensions.IpClaim) []api.OwnerReference {
+	// only services can be the claim owners for now
+	owners := []api.OwnerReference{}
+	for _, owner := range claim.Metadata.OwnerReferences {
+		_, exists, err := s.serviceStore.GetByKey(string(owner.UID))
+		if err != nil {
+			glog.Errorf("Checking claim '%v' owners: error getting service '%v' from cache: %v", claim.Metadata.Name, owner.UID, err)
+		}
+		if !exists {
+			glog.V(5).Infof("Checking claim '%v' owners: service '%v' is not in cache", claim.Metadata.Name, owner.UID)
+			ns_name := strings.Split(string(owner.UID), "/")
+			// "an empty namespace may not be set when a resource name is provided" error is thrown when
+			// calling Services.Get w/o a namespace
+			if len(ns_name) == 2 {
+				_, err = s.Clientset.Core().Services(ns_name[0]).Get(ns_name[1])
+			} else {
+				glog.Errorf("Checking claim '%v' owners: cannot get namespace for service '%v'", claim.Metadata.Name, owner.UID)
+			}
+			if apierrors.IsNotFound(err) {
+				glog.V(5).Infof("Checking claim '%v' owners: service '%v' does not exist", claim.Metadata.Name, owner.UID)
+				continue
+			}
+			if err != nil {
+				glog.Errorf("Checking claim '%v' owners: service '%v' get error: %v", claim.Metadata.Name, owner.UID, err)
+			}
+		}
+		owners = append(owners, owner)
+	}
+	glog.V(5).Infof("Checking claim '%v' owners: %v", claim.Metadata.Name, owners)
+	return owners
+}
+
 func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
+	ownersAlive := s.ownersAlive(claim)
+	if len(ownersAlive) == 0 {
+		// all owner links are irrelevant
+		pools := s.getIPClaimPoolList()
+		s.deleteIPClaimAndAllocation(strings.Split(claim.Spec.Cidr, "/")[0], pools)
+		return nil
+	} else if len(ownersAlive) < len(claim.Metadata.OwnerReferences) {
+		// some owner links are irrelevant
+		claim.Metadata.OwnerReferences = ownersAlive
+		s.addClaimChangeRequest(claim, cache.Updated)
+	}
+
 	if claim.Spec.NodeName != "" && s.isLive(claim.Spec.NodeName) {
 		return nil
 	}
@@ -526,15 +607,26 @@ func addServiceExternalIP(svc *v1.Service, kcs kubernetes.Interface, ip string) 
 	return err
 }
 
-func makeIPClaim(ip, mask string) *extensions.IpClaim {
+func makeIPClaim(ip, mask string, svc *v1.Service) *extensions.IpClaim {
 	ipParts := strings.Split(ip, ".")
 	key := strings.Join([]string{strings.Join(ipParts, "-"), mask}, "-")
 	cidr := strings.Join([]string{ip, mask}, "/")
 
 	glog.V(2).Infof("Creating IP claim '%v'", key)
 
+	meta := api.ObjectMeta{Name: key}
+	if svc != nil {
+		svc_key, err := cache.MetaNamespaceKeyFunc(svc)
+		if err != nil {
+			return nil
+		}
+		ctrl := false
+		ownerRef := api.OwnerReference{APIVersion: "v1", Kind: "Service", Name: svc.Name, UID: types.UID(svc_key), Controller: &ctrl}
+		meta.OwnerReferences = []api.OwnerReference{ownerRef}
+	}
+
 	ipclaim := &extensions.IpClaim{
-		Metadata: api.ObjectMeta{Name: key},
+		Metadata: meta,
 		Spec:     extensions.IpClaimSpec{Cidr: cidr},
 	}
 	return ipclaim

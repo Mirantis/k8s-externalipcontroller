@@ -654,6 +654,99 @@ var _ = Describe("Third party objects", func() {
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 	})
 
+	It("Daemon set version cleans orphaned IP claims when scheduler has missed services updates for some reason", func() {
+		processName := "ipmanager"
+		By("deploying claim scheduler pod")
+		scheduler := newPod(
+			"externalipscheduler", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{processName, "s", "--mask=24", "--logtostderr", "--v=5"}, nil, false, false)
+		_, err := clientset.Core().Pods(ns.Name).Create(scheduler)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("deploying claim controller daemon set")
+		// sh -c will be PID 1 and we will be able to stop our process
+		cmd := []string{processName, "c", "--logtostderr", "--v=5", "--iface=docker0"}
+		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
+			[]string{"sh", "-c", strings.Join(cmd, " ")}, ipcontrollerLabels, true, true)
+		ds, err = clientset.Extensions().DaemonSets(ns.Name).Create(ds)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("waiting until both nodes will be registered")
+		Eventually(func() error {
+			ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+			if err != nil {
+				return err
+			}
+			if len(ipnodes.Items) != 2 {
+				return fmt.Errorf("Unexpected nodes length %v", ipnodes.Items)
+			}
+			return nil
+		}, time.Second * 30, 2 * time.Second).Should(BeNil())
+
+		By("deploying nginx pod and service with multiple external ips")
+		nginx1Name := "nginx1"
+		var nginx1Port int32 = 2288
+		_, network, _ = net.ParseCIDR("10.107.10.0/24")
+		Expect(err).NotTo(HaveOccurred())
+		externalIPs1 := []string{"10.107.10.2", "10.107.10.3"}
+		deployNginxPodAndService(nginx1Name, nginx1Port, clientset, ns, externalIPs1)
+
+		By("deploying second nginx pod and service with multiple external ips")
+		nginx2Name := "nginx2"
+		var nginx2Port int32 = 2289
+		externalIPs2 := []string{"10.107.10.3", "10.107.10.4"}
+		deployNginxPodAndService(nginx2Name, nginx2Port, clientset, ns, externalIPs2)
+
+		By("assigning ip from external ip pool to a node where test is running")
+		Expect(netutils.EnsureIPAssigned(testutils.GetTestLink(), "10.107.10.10/24")).Should(BeNil())
+
+		By("verifying that both nginx services are reachable")
+		verifyServiceReachable(nginx1Port, externalIPs1...)
+		verifyServiceReachable(nginx2Port, externalIPs2...)
+
+		By("shuting down scheduler")
+		var zero int64 = 0
+		err = clientset.Core().Pods(ns.Name).Delete(scheduler.Name, &api.DeleteOptions{
+			GracePeriodSeconds: &zero,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying that scheduler pod is gone")
+		Eventually(func() error {
+			_, err = clientset.Core().Pods(ns.Name).Get(scheduler.Name)
+			if errors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}, 15*time.Second, 1*time.Second).Should(BeNil())
+
+		By("checking quantity of allocated ip claims")
+		claims := getAllocatedClaims(ext)
+		Expect(len(claims)).To(BeNumerically("==", 3))
+
+		By("deleting one of services")
+		err = clientset.Core().Services(ns.Name).Delete(nginx2Name, &api.DeleteOptions{})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("starting scheduler again")
+		_, err = clientset.Core().Pods(ns.Name).Create(scheduler)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying that claim allocation has changed (nginx2 ip claims were removed)")
+		Eventually(func() int {
+			return len(getAllocatedClaims(ext))
+		}, 30*time.Second, 1*time.Second).Should(BeEquivalentTo(2))
+
+		By("verifying that nginx service reachable using externalIPs of nginx1")
+		verifyServiceReachable(nginx1Port, externalIPs1...)
+
+		By("deleting service and verifying that all IP claims were removed")
+		err = clientset.Core().Services(ns.Name).Delete(nginx1Name, &api.DeleteOptions{})
+		Eventually(func() int {
+			return len(getAllocatedClaims(ext))
+		}, 15*time.Second, 1*time.Second).Should(BeEquivalentTo(0))
+	})
+
 	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [Native]", func() {
 		processName := "ipmanager"
 		By("deploying claim scheduler pod")
@@ -1064,7 +1157,7 @@ func newService(serviceName string, labels map[string]string, ports []v1.Service
 func deployNginxPodAndService(serviceName string, servicePort int32, clientset *kubernetes.Clientset, ns *v1.Namespace, externalIPs []string) {
 	nginxLabels := map[string]string{"app": "nginx"}
 	pod := newPod(
-		"nginx", "nginx", "gcr.io/google_containers/nginx-slim:0.7", nil, nginxLabels, false, false)
+		serviceName, "nginx", "gcr.io/google_containers/nginx-slim:0.7", nil, nginxLabels, false, false)
 	pod, err := clientset.Pods(ns.Name).Create(pod)
 	Expect(err).Should(BeNil())
 	testutils.WaitForReady(clientset, pod)
