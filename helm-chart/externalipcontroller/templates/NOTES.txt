@@ -1,0 +1,9 @@
+For general information about External IP Controller application, see:
+https://github.com/Mirantis/k8s-externalipcontroller
+
+For more details about using External IP Controller application, see:
+https://github.com/Mirantis/k8s-externalipcontroller/blob/master/doc
+
+This chart allows running External IP Controller application in claims mode.
+For more details about application operational modes, see:
+https://github.com/Mirantis/k8s-externalipcontroller/blob/master/doc/operating-modes.md
