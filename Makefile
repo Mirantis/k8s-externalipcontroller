@@ -94,7 +94,7 @@ $(BUILD_DIR)/ipmanager: $(BUILD_DIR) $(VENDOR_DIR)
 	$(DOCKER_EXEC) bash -xc '$(DOCKER_DEPS) \
 		go build --ldflags "-extldflags \"-static\"" \
 		-o $@ ./cmd/ipmanager/ ; \
-		chown $(shell id -u):$(shell id -u) -R _output'
+		chown $(shell id -u):$(shell id -g) -R _output'
 
 
 $(BUILD_DIR)/e2e.test: $(BUILD_DIR) $(VENDOR_DIR)
