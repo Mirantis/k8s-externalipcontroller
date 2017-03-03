@@ -1,0 +1,24 @@
+For general information about External IP Controller application, see:
+https://github.com/Mirantis/k8s-externalipcontroller
+
+For more details about using External IP Controller application, see:
+https://github.com/Mirantis/k8s-externalipcontroller/blob/master/doc
+
+This chart allows running External IP Controller application in claims mode.
+For more details about application operational modes, see:
+https://github.com/Mirantis/k8s-externalipcontroller/blob/master/doc/operating-modes.md
+
+In order to auto-create IpClaimPool one needs to add ippool.cidr and ippool.ranges into Values
+where ippool.ranges is optional.
+definition example:
+
+ippool:
+  cidr: 192.168.0.248/29
+  ranges:
+    - - 192.168.0.249
+      - 192.168.0.250
+    - - 192.168.0.252
+      - 192.168.0.253
+
+For more details about auto allocation of external IPs, see:
+https://github.com/Mirantis/k8s-externalipcontroller/blob/master/doc/auto-allocation.md
