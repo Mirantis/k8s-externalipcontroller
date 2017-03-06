@@ -1,7 +1,7 @@
 Basic Modules and Operating Modes
 =================================
 
-## Basic modules
+## Basic Modules
 
 Application consists of two basic modules: controller and scheduler. 
 
@@ -23,7 +23,7 @@ External IP Controller application may be run in one of the operating modes:
 * [Simple](#simple-mode)
 * [Claims](#claims-mode)
 
-## Simple mode
+## Simple Mode
 
 External IP controller application (its controller module) will be run on one of
 the nodes. It should be run on node that has external connectivity as all the
@@ -34,9 +34,8 @@ another k8s worker node and will bring External IPs up on that node.
 Simple mode is easy to setup and takes less resources. It makes sense when all
 IPs should be brought up on the same node. However, fail-over in this mode takes
 longer than in Claims mode (k8s detects node failure in much longer intervals by
-default, see `node-monitor-grace-period`, `pod-eviction-timeout`;
-these could be minimized but there was no research on how safe is it to set them
-to some 2-5 seconds) and it may work wrong in some cases.
+default, this could be optimized - see "Fail-over optimization on k8s side" document)
+and it may work wrong in some cases.
 
 # Parameters
 
@@ -48,7 +47,7 @@ configuration for auth will be used by default).
 * `resync` - interval to resync state for all ips (default 20 sec).
 It is usually enough to set `iface` and `mask` parameters.
 
-## Claims mode
+## Claims Mode
 
 External IP controller application will be run on several nodes. One or more
 controller modules and one or more scheduler modules will be run. Controller
@@ -63,7 +62,7 @@ schedulers.
 It is better not to run scheduler on same node as controller because in case of
 node outage IPs rescheduling will take more time.
 
-# IPs distribution in Claims mode
+# IPs Distribution in Claims Mode
 
 There can be different rules of IPs distribution among controllers (i.e. nodes)
 in Claims mode. This is controlled by `nodefilter` parameter. Default rule
