@@ -56,9 +56,8 @@ There is a set of application parameters that affect IP fail-over:
 ## Known Issues
 
 Regardless of the settings described above there are chances that pods from 
-failed nodes will be respawned with about 15-20 minutes lag. This behaviour was
-observed with k8s v.1.5.x and calico v1.1.0-rc3, v1.1.0-rc5 within 25-30% cases.
-Two situations have been observed that were leading to such behaviour:
-* kube-proxy does not resetup routes so applications cannot access kube-API when
-some of the master nodes go down;
-* pods are not respawned for a long time after some of the worker nodes go down.
+failed nodes will be respawned with about 15-20 minutes lag.
+Another issue is that kube-proxy does not resetup routes so applications cannot
+access kube-API when some of the master nodes go down.
+This behaviour was observed with k8s v.1.5.x and calico v1.1.0-rc3, v1.1.0-rc5
+within 25-30% cases.
