@@ -41,12 +41,15 @@ just kubernetes who cares about controllers' availability.
 ## Claims Mode
 
 In claims mode, kubernetes will respawn IP Scheduler pods and IP Controller
-pods. But in claims mode it is less significant for application as leader
+pods. But in claims mode it is not so critical for the application as leader
 election support for schedulers and monitoring of controllers reachability
-improves application availability.
-Thanks to leader election, scheduler will remain functional while at least one
-node has IP Scheduler pods. Scheduler module monitors controllers availability
-and reschedules IP claims to healthy controllers from unavailable ones.
+improves availability of the application.
+Thanks to the leader election, one scheduler will be active at any
+particular time. If the active scheduler becomes unavailable, then
+another instance of scheduler becomes active. So, scheduler remains functional
+while at least one operational node has IP Scheduler pods. Scheduler module
+monitors controllers availability and reschedules IP claims to healthy
+controllers from unavailable ones.
 In overall, application will continue to work properly while at least one
 scheduler and one controller remain operational.
 There is a set of application parameters that affect IP fail-over: 
