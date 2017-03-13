@@ -58,6 +58,8 @@ There is a set of application parameters that affect IP fail-over:
 
 ## Known Issues
 
+The following issues with kubernetes were discovered when any of master or etcd
+nodes goes down.
 Regardless of the settings described above there are chances that pods from 
 failed nodes will be respawned with about 15-20 minutes lag.
 Another issue is that kube-proxy does not resetup routes so applications cannot
