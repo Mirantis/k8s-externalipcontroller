@@ -91,4 +91,6 @@ auto-allocation.
 distribution between controllers (default "fair").
 * `monitor` - how often to check controllers responsiveness (default 4
 sec).
-
+* `leader-elect` - switch on the leader election mechanism for scheduler modules.
+Other leader election parameters are also taken into account. Please refer to
+kubernetes documentation for more detail.
