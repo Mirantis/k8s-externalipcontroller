@@ -34,8 +34,9 @@ another k8s worker node and will bring External IPs up on that node.
 Simple mode is easy to setup and takes less resources. It makes sense when all
 IPs should be brought up on the same node. However, fail-over in this mode takes
 longer than in Claims mode (k8s detects node failure in much longer intervals by
-default, this could be optimized - see "Fail-over optimization on k8s side" document)
+default, this could be optimized - see the ``Fail-Over Optimization`` document)
 and it may work wrong in some cases.
+Please also refer to the ``Simple Deployment Scheme`` for more information.
 
 # Parameters
 

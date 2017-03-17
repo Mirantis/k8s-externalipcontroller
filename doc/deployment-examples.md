@@ -25,6 +25,8 @@ In order to run the application, one needs to use `kubectl apply` providing
 the appropriate configuration file(s):
 * Simple mode: `kubectl apply -f examples/simple/externalipcontroller.yaml`
 * Claims mode: `kubectl apply -f examples/claims/controller.yaml -f examples/claims/scheduler.yaml`
+You can get more information regarding deployment of the application in simple
+mode from the ``Simple Deployment Scheme`` document.
 
 To check running pods, run `kubectl get pods -o wide`. Application pods should
 appear in the output::
