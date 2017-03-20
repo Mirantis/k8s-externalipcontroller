@@ -32,5 +32,6 @@ spec:
   selector:
     app: nginx
   externalIPs:
+    # IPs are environment-specific
     - 10.0.0.7
     - 10.0.0.8

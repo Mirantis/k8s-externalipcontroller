@@ -34,8 +34,9 @@ another k8s worker node and will bring External IPs up on that node.
 Simple mode is easy to setup and takes less resources. It makes sense when all
 IPs should be brought up on the same node. However, fail-over in this mode takes
 longer than in Claims mode (k8s detects node failure in much longer intervals by
-default, this could be optimized - see "Fail-over optimization on k8s side" document)
+default, this could be optimized - see the ``Fail-Over Optimization`` document)
 and it may work wrong in some cases.
+Please also refer to the ``Simple Deployment Scheme`` for more information.
 
 # Parameters
 
@@ -91,4 +92,6 @@ auto-allocation.
 distribution between controllers (default "fair").
 * `monitor` - how often to check controllers responsiveness (default 4
 sec).
-
+* `leader-elect` - switch on the leader election mechanism for scheduler modules.
+Other leader election parameters are also taken into account. Please refer to
+kubernetes documentation for more detail.
