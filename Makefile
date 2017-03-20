@@ -57,7 +57,8 @@ build-image: $(BUILD_IMAGE_MARKER)
 
 .PHONY: unit
 unit:
-	$(DOCKER_EXEC) go test -v ./pkg/...
+	$(DOCKER_EXEC) bash -xc '$(DOCKER_DEPS) \
+		go test -v ./pkg/...'
 
 
 .PHONY: integration
@@ -98,11 +99,13 @@ $(BUILD_DIR)/ipmanager: $(BUILD_DIR) $(VENDOR_DIR)
 
 
 $(BUILD_DIR)/e2e.test: $(BUILD_DIR) $(VENDOR_DIR)
-	$(DOCKER_EXEC) go test -c -o $@ ./test/e2e/
+	$(DOCKER_EXEC) bash -xc '$(DOCKER_DEPS) \
+		go test -c -o $@ ./test/e2e/'
 
 
 $(BUILD_DIR)/integration.test: $(BUILD_DIR) $(VENDOR_DIR)
-	$(DOCKER_EXEC) go test -c -o $@ ./test/integration/
+	$(DOCKER_EXEC) bash -xc '$(DOCKER_DEPS) \
+		go test -c -o $@ ./test/integration/'
 
 
 $(BUILD_IMAGE_MARKER): $(BUILD_DIR)/ipmanager
