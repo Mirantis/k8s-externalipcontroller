@@ -51,9 +51,9 @@ Each of these resources can be got/altered separately.
 E.g., `kubectl get ipnode` should return all the nodes where the controller
 modules are running.
 
-There is an nginx deployment example in `examples/nginx.yaml` that can be used
+There is an Nginx deployment example in `examples/nginx.yaml` that can be used
 to test External IPs functioning. One can alter `externalIPs` section according
-to environment settings and run nginx server using `kubectl apply -f` command.
+to environment settings and run Nginx server using `kubectl apply -f` command.
 Given set of IPs should be set up by the External IP Controller then. It can be
 checked with `curl` and by retrieving `ipclaim` TPR::
 
