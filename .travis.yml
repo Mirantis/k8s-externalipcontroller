@@ -8,6 +8,9 @@ cache:
   directories:
     - $HOME/kube
 before_install:
+  - echo "$TRAVIS_BRANCH"
+  - git rev-parse --abbrev-ref HEAD
+  - exit 1
   - mkdir -p _output/
   - sudo apt-get install -y git
   - sudo apt-get install libpcap-dev
