@@ -1,3 +1,18 @@
+# Copyright 2017 Mirantis
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
 IMAGE_REPO ?= mirantis/k8s-externalipcontroller
 IMAGE_TAG ?= latest
 DOCKER_BUILD ?= no
@@ -6,8 +21,13 @@ BUILD_DIR = _output
 VENDOR_DIR = vendor
 ROOT_DIR = $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
+# kubeadm-dind-cluster supports k8s versions:
+# "v1.4", "v1.5" and "v1.6".
+DIND_CLUSTER_VERSION ?= v1.4
+
 ENV_PREPARE_MARKER = .env-prepare.complete
 BUILD_IMAGE_MARKER = .build-image.complete
+
 
 ifeq ($(DOCKER_BUILD), yes)
 	_DOCKER_GOPATH = /go
@@ -26,17 +46,19 @@ help:
 	@echo "Usage: 'make <target>'"
 	@echo ""
 	@echo "Targets:"
-	@echo "help            - Print this message and exit"
-	@echo "get-deps        - Install project dependencies"
+	@echo "help                - Print this message and exit"
+	@echo "get-deps            - Install project dependencies"
 	@echo "containerized-build - Build ipmanager binary in container"
-	@echo "build           - Build ipmanager binary"
-	@echo "build-image     - Build docker image"
-	@echo "test            - Run all tests"
-	@echo "unit            - Run unit tests"
-	@echo "integration     - Run integration tests"
-	@echo "e2e             - Run e2e tests"
-	@echo "clean           - Delete binaries"
-	@echo "clean-all       - Delete binaries and vendor files"
+	@echo "build               - Build ipmanager binary"
+	@echo "build-image         - Build docker image"
+	@echo "test                - Run all tests"
+	@echo "unit                - Run unit tests"
+	@echo "integration         - Run integration tests"
+	@echo "e2e                 - Run e2e tests"
+	@echo "docker-publish      - Push images to Docker Hub registry"
+	@echo "clean               - Delete binaries"
+	@echo "clean-k8s           - Delete kubeadm-dind-cluster"
+	@echo "clean-all           - Delete binaries and vendor files"
 
 .PHONY: get-deps
 get-deps: $(VENDOR_DIR)
@@ -68,11 +90,16 @@ integration: $(BUILD_DIR)/integration.test $(ENV_PREPARE_MARKER)
 
 .PHONY: e2e
 e2e: $(BUILD_DIR)/e2e.test $(ENV_PREPARE_MARKER)
-	sudo $(BUILD_DIR)/e2e.test --master=http://localhost:8888 --testlink=docker0 -ginkgo.v
+	sudo $(BUILD_DIR)/e2e.test --master=http://localhost:8080 --testlink=dind0 -ginkgo.v
 
 
 .PHONY: test
 test: unit integration e2e
+
+
+.PHONY: docker-publish
+docker-publish:
+	IMAGE_REPO=$(IMAGE_REPO) IMAGE_TAG=$(IMAGE_TAG) bash ./scripts/docker_publish.sh
 
 
 .PHONY: clean
@@ -80,8 +107,17 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 
+.PHONY: clean-k8s
+clean-k8s:
+	bash ./scripts/dind-cluster-$(DIND_CLUSTER_VERSION).sh clean
+	rm -f ./scripts/dind-cluster-$(DIND_CLUSTER_VERSION).sh
+	rm -rf $(HOME)/.kubeadm-dind-cluster
+	rm -rf $(HOME)/.kube
+	rm -f $(ENV_PREPARE_MARKER)
+
+
 .PHONY: clean-all
-clean-all: clean
+clean-all: clean clean-k8s
 	rm -rf $(VENDOR_DIR)
 	rm -f $(BUILD_IMAGE_MARKER)
 	docker rmi -f $(IMAGE_REPO):$(IMAGE_TAG)
@@ -89,6 +125,12 @@ clean-all: clean
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
+
+
+$(VENDOR_DIR):
+	$(DOCKER_EXEC) bash -xc 'go get github.com/Masterminds/glide && \
+		glide install --strip-vendor; \
+		chown $(shell id -u):$(shell id -g) -R vendor'
 
 
 $(BUILD_DIR)/ipmanager: $(BUILD_DIR) $(VENDOR_DIR)
@@ -110,22 +152,10 @@ $(BUILD_DIR)/integration.test: $(BUILD_DIR) $(VENDOR_DIR)
 
 $(BUILD_IMAGE_MARKER): $(BUILD_DIR)/ipmanager
 	docker build -t $(IMAGE_REPO):$(IMAGE_TAG) .
-	echo > $(BUILD_IMAGE_MARKER)
-
-
-$(VENDOR_DIR):
-	$(DOCKER_EXEC) bash -xc 'go get github.com/Masterminds/glide && \
-		glide install --strip-vendor; \
-		chown $(shell id -u):$(shell id -g) -R vendor'
+	touch $(BUILD_IMAGE_MARKER)
 
 
 $(ENV_PREPARE_MARKER): build-image
-	./scripts/kube.sh
-	./scripts/dind.sh
-	CONTAINER_ID=$$(docker create $(IMAGE_REPO):$(IMAGE_TAG) bash) && \
-		docker export $$CONTAINER_ID > $(BUILD_DIR)/ipcontroller.tar
-	docker cp $(BUILD_DIR)/ipcontroller.tar dind_node_1:/tmp
-	docker exec -ti dind_node_1 docker import /tmp/ipcontroller.tar $(IMAGE_REPO):$(IMAGE_TAG)
-	docker cp $(BUILD_DIR)/ipcontroller.tar dind_node_2:/tmp
-	docker exec -ti dind_node_2 docker import /tmp/ipcontroller.tar $(IMAGE_REPO):$(IMAGE_TAG)
-	echo > $(ENV_PREPARE_MARKER)
+	DIND_CLUSTER_VERSION=$(DIND_CLUSTER_VERSION) bash ./scripts/kubeadm_dind_cluster.sh
+	IMAGE_REPO=$(IMAGE_REPO) IMAGE_TAG=$(IMAGE_TAG) bash ./scripts/import_images.sh
+	touch $(ENV_PREPARE_MARKER)

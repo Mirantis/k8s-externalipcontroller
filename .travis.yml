@@ -1,18 +1,13 @@
 sudo: required
-language: go
 services:
-    - docker
-env:
-  - WORKDIRECTORY=$HOME/kube
-cache:
-  directories:
-    - $HOME/kube
+  - docker
+language: go
 before_install:
   - mkdir -p _output/
   - sudo apt-get install -y git
   - sudo apt-get install libpcap-dev
 install:
   - make get-deps
-script: make test
-after_success:
-  - ./scripts/push.sh
+script:
+  - make test
+  - make docker-publish

@@ -46,7 +46,7 @@ var _ = Describe("Basic", func() {
 	var ns *v1.Namespace
 	var addrToClear []string
 	var ipcontrollerName = "externalipcontroller"
-	var linkToUse = "docker0"
+	var linkToUse = "dind0"
 
 	BeforeEach(func() {
 		var err error
@@ -81,7 +81,7 @@ var _ = Describe("Basic", func() {
 
 	It("Service should be reachable using assigned external ips [pod-version]", func() {
 		By("deploying externalipcontroller pod")
-		// TODO make docker0 iface configurable
+		// TODO make dind0 iface configurable
 		externalipcontroller := newPod(
 			"externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
 			[]string{"ipmanager", "n", "--logtostderr=true", "--v=10", "--iface=" + linkToUse, "--mask=24"}, nil, true, true)
@@ -183,7 +183,7 @@ var _ = Describe("Third party objects", func() {
 	var ns *v1.Namespace
 	var addrToClear []string
 	var ipcontrollerLabels = map[string]string{"app": "ipcontroller"}
-	var linkToUse = "docker0"
+	var linkToUse = "dind0"
 	var nodes *v1.NodeList
 	var network *net.IPNet
 
@@ -665,7 +665,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("deploying claim controller daemon set")
 		// sh -c will be PID 1 and we will be able to stop our process
-		cmd := []string{processName, "c", "--logtostderr", "--v=5", "--iface=docker0"}
+		cmd := []string{processName, "c", "--logtostderr", "--v=5", "--iface=dind0"}
 		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
 			[]string{"sh", "-c", strings.Join(cmd, " ")}, ipcontrollerLabels, true, true)
 		ds, err = clientset.Extensions().DaemonSets(ns.Name).Create(ds)
@@ -758,7 +758,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("deploying claim controller daemon set")
 		// sh -c will be PID 1 and we will be able to stop our process
-		cmd := []string{processName, "c", "--logtostderr", "--v=5", "--iface=docker0"}
+		cmd := []string{processName, "c", "--logtostderr", "--v=5", "--iface=dind0"}
 		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
 			[]string{"sh", "-c", strings.Join(cmd, " ")}, ipcontrollerLabels, true, true)
 		ds, err = clientset.Extensions().DaemonSets(ns.Name).Create(ds)
@@ -796,7 +796,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(len(dsPods)).To(BeNumerically(">", 1))
 		var totalCount int
 		for i := range dsPods {
-			managedIPs := getManagedIps(clientset, dsPods[i], network, "docker0")
+			managedIPs := getManagedIps(clientset, dsPods[i], network, "dind0")
 			Expect(len(managedIPs)).To(BeNumerically("<", len(externalIPs)))
 			totalCount += len(managedIPs)
 		}
@@ -839,7 +839,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("verify that all ips are reassigned to another pod")
 		Eventually(func() error {
-			allIPs := getManagedIps(clientset, dsPods[1], network, "docker0")
+			allIPs := getManagedIps(clientset, dsPods[1], network, "dind0")
 			if len(allIPs) != len(externalIPs) {
 				return fmt.Errorf("Not all IPs were reassigned to another pod: %v", allIPs)
 			}
@@ -872,7 +872,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(rst).To(BeEmpty())
 		Eventually(func() error {
-			if ips := getManagedIps(clientset, dsPods[0], network, "docker0"); ips == nil {
+			if ips := getManagedIps(clientset, dsPods[0], network, "dind0"); ips == nil {
 				return nil
 			} else {
 				return fmt.Errorf("Unexpected IP %v", ips)
@@ -883,7 +883,7 @@ var _ = Describe("Third party objects", func() {
 		err = clientset.Core().Services(ns.Name).Delete(nginxName, &api.DeleteOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func() error {
-			if ips := getManagedIps(clientset, dsPods[1], network, "docker0"); ips == nil {
+			if ips := getManagedIps(clientset, dsPods[1], network, "dind0"); ips == nil {
 				return nil
 			} else {
 				return fmt.Errorf("Unexpected IP %v", ips)
@@ -902,7 +902,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("deploying claim controller daemon set")
 		// sh -c will be PID 1 and we will be able to stop our process
-		cmd := []string{processName, "c", "--logtostderr", "--v=5", "--iface=docker0"}
+		cmd := []string{processName, "c", "--logtostderr", "--v=5", "--iface=dind0"}
 		ds := newDaemonSet("externalipcontroller", "externalipcontroller", "mirantis/k8s-externalipcontroller",
 			[]string{"sh", "-c", strings.Join(cmd, " ")}, ipcontrollerLabels, true, true)
 		ds, err = clientset.Extensions().DaemonSets(ns.Name).Create(ds)
@@ -940,7 +940,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(len(dsPods)).To(BeNumerically("==", 2))
 		var totalCount int
 		for i := range dsPods {
-			managedIPs := getManagedIps(clientset, dsPods[i], network, "docker0")
+			managedIPs := getManagedIps(clientset, dsPods[i], network, "dind0")
 			if len(managedIPs) > 0 {
 				Expect(len(managedIPs)).To(BeNumerically("==", len(externalIPs)))
 			}
@@ -990,7 +990,7 @@ var _ = Describe("Third party objects", func() {
 		liveController := dsPods[0].Name
 		Expect(len(dsPods)).To(BeNumerically("==", 1))
 		Eventually(func() error {
-			allIPs := getManagedIps(clientset, dsPods[0], network, "docker0")
+			allIPs := getManagedIps(clientset, dsPods[0], network, "dind0")
 			if len(allIPs) != len(externalIPs) {
 				return fmt.Errorf("Not all IPs were reassigned to another pod: %v", allIPs)
 			}
@@ -1018,7 +1018,7 @@ var _ = Describe("Third party objects", func() {
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 		By("verifying that all ips are purged from new controller " + newController.Name)
 		Eventually(func() error {
-			if ips := getManagedIps(clientset, newController, network, "docker0"); ips == nil {
+			if ips := getManagedIps(clientset, newController, network, "dind0"); ips == nil {
 				return nil
 			} else {
 				return fmt.Errorf("Unexpected IP %v", ips)

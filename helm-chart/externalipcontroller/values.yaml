@@ -11,4 +11,4 @@ scheduler:
   network_mask: 24
 controller:
   name: claimcontroller
-  interface: docker0
+  interface: dind0
