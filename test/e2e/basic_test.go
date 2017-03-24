@@ -677,7 +677,7 @@ var _ = Describe("Third party objects", func() {
 			if err != nil {
 				return err
 			}
-			if len(ipnodes.Items) != 2 {
+			if len(ipnodes.Items) != 3 {
 				return fmt.Errorf("Unexpected nodes length %v", ipnodes.Items)
 			}
 			return nil
@@ -770,7 +770,7 @@ var _ = Describe("Third party objects", func() {
 			if err != nil {
 				return err
 			}
-			if len(ipnodes.Items) != 2 {
+			if len(ipnodes.Items) != 3 {
 				return fmt.Errorf("Unexpected nodes length %v", ipnodes.Items)
 			}
 			return nil
@@ -914,7 +914,7 @@ var _ = Describe("Third party objects", func() {
 			if err != nil {
 				return err
 			}
-			if len(ipnodes.Items) != 2 {
+			if len(ipnodes.Items) != 3 {
 				return fmt.Errorf("Unexpected nodes length %v", ipnodes.Items)
 			}
 			return nil
