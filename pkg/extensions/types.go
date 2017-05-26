@@ -76,7 +76,7 @@ type IpNode struct {
 	Metadata api.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// used as a heartbeat
-	Revision int64 `json:"generation,string"`
+	Revision int64 `json:",string"`
 }
 
 func (e *IpNode) GetObjectKind() unversioned.ObjectKind {
