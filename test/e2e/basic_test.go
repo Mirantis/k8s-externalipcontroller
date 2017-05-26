@@ -1084,7 +1084,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 		for _, node := range ipnodes.Items {
 			node.Revision = 10000000
-			newNode, err := ext.IPNodes().Update(node)
+			_, err := ext.IPNodes().Update(&node)
 			Expect(err).NotTo(HaveOccurred())
 		}
 		_, err = ext.IPNodes().List(api.ListOptions{})
