@@ -1087,8 +1087,6 @@ var _ = Describe("Third party objects", func() {
 			_, err := ext.IPNodes().Update(&node)
 			Expect(err).NotTo(HaveOccurred())
 		}
-		//_, err = ext.IPNodes().List(api.ListOptions{})
-		//Expect(err).NotTo(HaveOccurred())
 	})
 })
 
