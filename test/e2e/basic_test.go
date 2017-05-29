@@ -681,7 +681,7 @@ var _ = Describe("Third party objects", func() {
 				return fmt.Errorf("Unexpected nodes length %v", ipnodes.Items)
 			}
 			return nil
-		}, time.Second * 30, 2 * time.Second).Should(BeNil())
+		}, time.Second*30, 2*time.Second).Should(BeNil())
 
 		By("deploying nginx pod and service with multiple external ips")
 		nginx1Name := "nginx1"
@@ -1079,6 +1079,14 @@ var _ = Describe("Third party objects", func() {
 			}
 			return nil
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
+
+		ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		for _, node := range ipnodes.Items {
+			node.Revision = 10000000
+			_, err := ext.IPNodes().Update(&node)
+			Expect(err).NotTo(HaveOccurred())
+		}
 	})
 })
 
