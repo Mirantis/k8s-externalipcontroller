@@ -19,7 +19,7 @@ spec:
           - ipmanager
           - claimcontroller
           # iface is environment specific
-          - --iface=docker0
+          - --iface=dind0
           - --logtostderr
           - --v=5
           - --hb=500ms

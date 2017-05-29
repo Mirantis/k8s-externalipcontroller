@@ -40,7 +40,7 @@ var MASTER string
 var TESTLINK string
 
 func init() {
-	flag.StringVar(&MASTER, "master", "http://apiserver:8888", "apiserver address to use with restclient")
+	flag.StringVar(&MASTER, "master", "http://apiserver:8080", "apiserver address to use with restclient")
 	flag.StringVar(&TESTLINK, "testlink", "eth0", "link to use on the side of tests")
 }
 
