@@ -245,14 +245,19 @@ func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service, poolList *ext
 		svc.ObjectMeta.Name, freeIP,
 	)
 	svc.Spec.ExternalIPs = append(svc.Spec.ExternalIPs, freeIP)
-	if setLBIp {
-		svc.Spec.LoadBalancerIP = freeIP
-	}
-	_, err = s.Clientset.Core().Services(svc.ObjectMeta.Namespace).Update(svc)
+	svc, err = s.Clientset.Core().Services(svc.ObjectMeta.Namespace).Update(svc)
 	if err != nil {
 		glog.Errorf("Unable to update ExternalIPs for service '%v'. Details: %v",
 			svc.ObjectMeta, err)
 	}
+	if setLBIp {
+		svc.Status.LoadBalancer = v1.LoadBalancerStatus{Ingress: []v1.LoadBalancerIngress{{IP: freeIP}}}
+		_, err = s.Clientset.Core().Services(svc.ObjectMeta.Namespace).UpdateStatus(svc)
+		if err != nil {
+			glog.Errorf("Error updating service %s status with LoadBalancer IP: %v", svc.Name, err)
+		}
+	}
+
 }
 
 func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
