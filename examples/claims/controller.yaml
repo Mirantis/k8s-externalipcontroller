@@ -11,7 +11,7 @@ spec:
       hostNetwork: true
       containers:
       - name: externalipcontroller
-        image: mirantis/k8s-externalipcontroller
+        image: yashulyak/k8s-externalipcontroller
         imagePullPolicy: IfNotPresent
         securityContext:
           privileged: true
@@ -19,7 +19,7 @@ spec:
           - ipmanager
           - claimcontroller
           # iface is environment specific
-          - --iface=docker0
+          - --iface=dind0
           - --logtostderr
           - --v=5
           - --hb=500ms

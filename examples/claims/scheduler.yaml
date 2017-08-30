@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: claimscheduler
 spec:
-  replicas: 2
+  replicas: 1
   template:
     metadata:
       labels:
@@ -11,7 +11,7 @@ spec:
     spec:
       containers:
         - name: externalipcontroller
-          image: mirantis/k8s-externalipcontroller
+          image: yashulyak/k8s-externalipcontroller
           imagePullPolicy: IfNotPresent
           command:
             - ipmanager
