@@ -32,10 +32,10 @@ import (
 	"k8s.io/client-go/1.5/pkg/fields"
 	"k8s.io/client-go/1.5/pkg/labels"
 	"k8s.io/client-go/1.5/pkg/runtime"
+	"k8s.io/client-go/1.5/pkg/types"
 	"k8s.io/client-go/1.5/pkg/watch"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/cache"
-	"k8s.io/client-go/1.5/pkg/types"
 )
 
 const (
@@ -76,11 +76,11 @@ func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.
 		observedGeneration: make(map[string]int64),
 		liveIpNodes:        make(map[string]struct{}),
 
-		queue: workqueue.NewQueue(),
+		queue:       workqueue.NewQueue(),
 		changeQueue: workqueue.NewQueue(),
 	}
 
-	switch nodeFilter{
+	switch nodeFilter {
 	case "fair":
 		scheduler.getNode = scheduler.getFairNode
 	case "first-alive":
@@ -113,7 +113,7 @@ type ipClaimScheduler struct {
 
 	getNode nodeFilter
 
-	queue workqueue.QueueType
+	queue       workqueue.QueueType
 	changeQueue workqueue.QueueType
 }
 
@@ -181,9 +181,14 @@ func (s *ipClaimScheduler) processExternalIPs(svc *v1.Service) {
 		}
 		s.addClaimChangeRequest(makeIPClaim(ip, s.DefaultMask, svc), cache.Added)
 	}
+	if foundAuto {
+		return
+	}
 
-	if annotated := checkAnnotation(svc); annotated && !foundAuto {
-		s.autoAllocateExternalIP(svc, pools)
+	if annotated := checkAnnotation(svc); annotated {
+		s.autoAllocateExternalIP(svc, pools, false)
+	} else if svc.Spec.Type == v1.ServiceTypeLoadBalancer {
+		s.autoAllocateExternalIP(svc, pools, true)
 	}
 }
 
@@ -196,7 +201,7 @@ func poolByAllocatedIP(ip string, poolList *extensions.IpClaimPoolList) *extensi
 	return nil
 }
 
-func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service, poolList *extensions.IpClaimPoolList) {
+func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service, poolList *extensions.IpClaimPoolList, setLBIp bool) {
 	glog.V(5).Infof("Try to auto allocate external IP for service '%v'", svc.ObjectMeta.Name)
 
 	var freeIP string
@@ -235,8 +240,15 @@ func (s *ipClaimScheduler) autoAllocateExternalIP(svc *v1.Service, poolList *ext
 		glog.Errorf("Unable to update IP pool's '%v' allocation. Details: %v",
 			pool.Metadata.Name, err)
 	}
-
-	err = addServiceExternalIP(svc, s.Clientset, freeIP)
+	glog.V(5).Infof(
+		"Try to update externalIPs list of service '%v' with IP address '%v'",
+		svc.ObjectMeta.Name, freeIP,
+	)
+	svc.Spec.ExternalIPs = append(svc.Spec.ExternalIPs, freeIP)
+	if setLBIp {
+		svc.Spec.LoadBalancerIP = freeIP
+	}
+	_, err = s.Clientset.Core().Services(svc.ObjectMeta.Namespace).Update(svc)
 	if err != nil {
 		glog.Errorf("Unable to update ExternalIPs for service '%v'. Details: %v",
 			svc.ObjectMeta, err)
@@ -247,7 +259,7 @@ func (s *ipClaimScheduler) claimWatcher(stop chan struct{}) {
 	store, controller := cache.NewInformer(
 		s.claimSource,
 		&extensions.IpClaim{},
-		10 * time.Second,
+		10*time.Second,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				claim := obj.(*extensions.IpClaim)
@@ -594,16 +606,6 @@ func updatePoolAllocation(ext extensions.ExtensionsClientset, pool *extensions.I
 
 	glog.V(2).Infof("Update IP pool with object %v", pool)
 	_, err := ext.IPClaimPools().Update(pool)
-	return err
-}
-
-func addServiceExternalIP(svc *v1.Service, kcs kubernetes.Interface, ip string) error {
-	glog.V(5).Infof(
-		"Try to update externalIPs list of service '%v' with IP address '%v'",
-		svc.ObjectMeta.Name, ip,
-	)
-	svc.Spec.ExternalIPs = append(svc.Spec.ExternalIPs, ip)
-	_, err := kcs.Core().Services(svc.ObjectMeta.Namespace).Update(svc)
 	return err
 }
 
