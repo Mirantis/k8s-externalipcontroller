@@ -68,3 +68,15 @@ For each service that require ip we will create ipclaim object. You can list all
 ```
 kubectl get ipclaims
 ```
+
+Notes on CI and end-to-end tests
+================================
+In tests we want to verify that IPs are reachable remotely. For this purpose we are using --testlink option in e2e tests. 
+During the tests we will configure that link with IP from a network that is used in tests. 
+This is also the reason why we are running e2e tests with sudo.
+The requirement here is that all kubernetes nodes must be in the same L2 domain.
+In our application we are assigning IPs to a node. In dind-based setup those nodes are regular containers.
+Therefore to guarantee connectivity in our CI we need to assign IP on a bridge used by docker.
+
+For simplicity we want to limit number of running ipcontrollers to 2. To make it work with kubeadm-dind-cluster 
+we have to set label ipcontroller= on kube workers.  And in the test we are using this label as node selector for daemonset pods.
