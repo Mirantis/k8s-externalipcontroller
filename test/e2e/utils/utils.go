@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/1.5/kubernetes"
 	"k8s.io/client-go/1.5/pkg/api"
 	"k8s.io/client-go/1.5/pkg/api/v1"
+	"k8s.io/client-go/1.5/pkg/apis/rbac/v1alpha1"
 	"k8s.io/client-go/1.5/rest"
 	"k8s.io/client-go/1.5/tools/clientcmd"
 	"k8s.io/kubernetes/pkg/client/unversioned/remotecommand"
@@ -34,6 +35,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"k8s.io/client-go/1.5/pkg/api/errors"
 )
 
 var MASTER string
@@ -139,4 +141,27 @@ func execute(method string, url *url.URL, config *rest.Config, stdin io.Reader, 
 		Stderr:             stderr,
 		Tty:                tty,
 	})
+}
+
+// AddServiceAccountToAdmins will add system:serviceaccounts to cluster-admin ClusterRole
+func AddServiceAccountToAdmins(c kubernetes.Interface) {
+	By("Adding service account group to cluster-admin role")
+	roleBinding := &v1alpha1.ClusterRoleBinding{
+		ObjectMeta: v1.ObjectMeta{
+			Name: "system:serviceaccount-admin",
+		},
+		Subjects: []v1alpha1.Subject{{
+			Kind: "Group",
+			Name: "system:serviceaccounts",
+		}},
+		RoleRef: v1alpha1.RoleRef{
+			Kind:     "ClusterRole",
+			Name:     "cluster-admin",
+			APIGroup: "rbac.authorization.k8s.io",
+		},
+	}
+	_, err := c.Rbac().ClusterRoleBindings().Create(roleBinding)
+	if !errors.IsAlreadyExists(err) {
+		Expect(err).NotTo(HaveOccurred(), "Failed to create role binding for serviceaccounts")
+	}
 }
