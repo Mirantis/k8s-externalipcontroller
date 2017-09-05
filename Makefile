@@ -6,8 +6,9 @@ BUILD_DIR = _output
 VENDOR_DIR = vendor
 ROOT_DIR = $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-ENV_PREPARE_MARKER = .env-prepare.complete
+ENV_PREPARE_MARKER = .env.complete
 BUILD_IMAGE_MARKER = .build-image.complete
+K8S_VERSION = v1.7
 
 ifeq ($(DOCKER_BUILD), yes)
 	_DOCKER_GOPATH = /go
@@ -67,8 +68,11 @@ integration: $(BUILD_DIR)/integration.test $(ENV_PREPARE_MARKER)
 
 
 .PHONY: e2e
-e2e: $(BUILD_DIR)/e2e.test $(ENV_PREPARE_MARKER)
-	sudo $(BUILD_DIR)/e2e.test --master=http://localhost:8888 --testlink=docker0 -ginkgo.v
+e2e: $(BUILD_DIR)/e2e.test $(ENV_PREPARE_MARKER) run-e2e
+
+run-e2e: 
+	sudo $(BUILD_DIR)/e2e.test --master=http://localhost:8080 \
+	--testlink=br-$(shell docker network ls -f name=kubeadm-dind-net -q) -ginkgo.v
 
 
 .PHONY: test
@@ -118,14 +122,29 @@ $(VENDOR_DIR):
 		glide install --strip-vendor; \
 		chown $(shell id -u):$(shell id -g) -R vendor'
 
+.PHONY: build-env
+build-env: kubeadm-dind-cluster $(BUILD_IMAGE_MARKER)
+	docker save $(IMAGE_REPO):$(IMAGE_TAG) -o $(BUILD_DIR)/ipcontroller.tar
+	docker cp $(BUILD_DIR)/ipcontroller.tar kube-master:/
+	docker exec -ti kube-master docker load -i /ipcontroller.tar
+	docker exec -ti kube-master ip l set dev dind0 promisc on
+	docker cp $(BUILD_DIR)/ipcontroller.tar kube-node-1:/
+	docker exec -ti kube-node-1 docker load -i /ipcontroller.tar
+	docker exec -ti kube-node-1 ip l set dev dind0 promisc on
+	~/.kubeadm-dind-cluster/kubectl label node kube-node-1 --overwrite ipcontroller=
+	docker cp $(BUILD_DIR)/ipcontroller.tar kube-node-2:/
+	docker exec -ti kube-node-2 docker load -i /ipcontroller.tar
+	docker exec -ti kube-node-2 ip l set dev dind0 promisc on
+	~/.kubeadm-dind-cluster/kubectl label node kube-node-2 --overwrite ipcontroller=
 
-$(ENV_PREPARE_MARKER): build-image
-	./scripts/kube.sh
-	./scripts/dind.sh
-	CONTAINER_ID=$$(docker create $(IMAGE_REPO):$(IMAGE_TAG) bash) && \
-		docker export $$CONTAINER_ID > $(BUILD_DIR)/ipcontroller.tar
-	docker cp $(BUILD_DIR)/ipcontroller.tar dind_node_1:/tmp
-	docker exec -ti dind_node_1 docker import /tmp/ipcontroller.tar $(IMAGE_REPO):$(IMAGE_TAG)
-	docker cp $(BUILD_DIR)/ipcontroller.tar dind_node_2:/tmp
-	docker exec -ti dind_node_2 docker import /tmp/ipcontroller.tar $(IMAGE_REPO):$(IMAGE_TAG)
-	echo > $(ENV_PREPARE_MARKER)
+$(ENV_PREPARE_MARKER): build-env
+	touch $(ENV_PREPARE_MARKER)
+
+.PHONY: clean-k8s
+clean-k8s:
+	-./kubeadm-dind-cluster/fixed/dind-cluster-$(K8S_VERSION).sh clean
+	-rm -rf kubeadm-dind-cluster/
+
+kubeadm-dind-cluster:
+	git clone https://github.com/Mirantis/kubeadm-dind-cluster.git
+	./kubeadm-dind-cluster/fixed/dind-cluster-$(K8S_VERSION).sh up

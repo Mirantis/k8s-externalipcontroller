@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: nginx
 spec:
-  replicas: 2
+  replicas: 1
   template:
     metadata:
       labels:
@@ -21,7 +21,7 @@ metadata:
   labels:
     app: nginx
 spec:
-  type: NodePort
+  type: LoadBalancer
   ports:
   - port: 80
     protocol: TCP
@@ -31,7 +31,3 @@ spec:
     name: https
   selector:
     app: nginx
-  externalIPs:
-    # IPs are environment-specific
-    - 10.0.0.7
-    - 10.0.0.8

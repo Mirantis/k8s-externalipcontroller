@@ -4,5 +4,6 @@ test.test
 vendor/
 _output/
 workdir/
+kubeadm-dind-cluster/
 
 *.complete
