@@ -15,69 +15,110 @@
 package extensions
 
 import (
-	"strings"
+	"fmt"
+
 	"time"
 
+	"strings"
+
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
-func EnsureThirdPartyResourcesExist(ki kubernetes.Interface) error {
-	resourceNames := []string{"ip-node", "ip-claim", "ip-claim-pool"}
-	for _, resName := range resourceNames {
-		if err := ensureThirdPartyResource(ki, resName); err != nil {
+var (
+	resources = []string{"ip-node", "ip-claim", "ip-claim-pool"}
+)
+
+func fqName(name string) string {
+	return fmt.Sprintf("%ss.%s", name, GroupName)
+}
+
+func lowercase(name string) string {
+	parts := strings.Split(name, "-")
+	return strings.Join(parts, "")
+}
+
+func kind(name string) string {
+	parts := strings.Split(name, "-")
+	kindBytes := []byte{}
+	for _, part := range parts {
+		kindBytes = append(kindBytes, []byte(strings.Title(part))...)
+	}
+	return string(kindBytes)
+}
+
+func EnsureCRDsExist(ki kubernetes.Interface) error {
+	client := apiextensionsclient.New(ki.Core().RESTClient())
+	for _, res := range resources {
+		if err := createCRD(client, res); err != nil && !errors.IsAlreadyExists(err) {
 			return err
 		}
 	}
-
 	return nil
 }
 
-func RemoveThirdPartyResources(ki kubernetes.Interface) {
-	for _, name := range []string{"ip-node", "ip-claim", "ip-claim-pool"} {
-		fullName := strings.Join([]string{name, GroupName}, ".")
-		ki.Extensions().ThirdPartyResources().Delete(fullName, &metav1.DeleteOptions{})
+func RemoveCRDs(ki kubernetes.Interface) error {
+	client := apiextensionsclient.New(ki.Core().RESTClient())
+	for _, res := range resources {
+		if err := client.Apiextensions().CustomResourceDefinitions().Delete(
+			fqName(res), &metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			return err
+		}
 	}
+	return nil
 }
 
-func ensureThirdPartyResource(ki kubernetes.Interface, name string) error {
-	fullName := strings.Join([]string{name, GroupName}, ".")
-	_, err := ki.Extensions().ThirdPartyResources().Get(fullName, metav1.GetOptions{})
-	if err == nil {
-		return nil
+func createCRD(client apiextensionsclient.Interface, name string) error {
+	singular := lowercase(name)
+	crd := &apiextensionsv1beta1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fqName(name),
+		},
+		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
+			Group:   GroupName,
+			Version: Version,
+			Scope:   apiextensionsv1beta1.ClusterScoped,
+			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
+				Plural:   singular + "s",
+				Singular: singular,
+				Kind:     kind(name),
+			},
+		},
 	}
-
-	resource := &v1beta1.ThirdPartyResource{
-		Versions: []v1beta1.APIVersion{
-			{Name: Version},
-		}}
-	resource.SetName(fullName)
-	_, err = ki.Extensions().ThirdPartyResources().Create(resource)
+	_, err := client.Apiextensions().CustomResourceDefinitions().Create(crd)
 	return err
 }
 
-func WaitThirdPartyResources(ext ExtensionsClientset, timeout time.Duration, interval time.Duration) (err error) {
-	timeoutChan := time.After(timeout)
-	intervalChan := time.Tick(interval)
+func WaitCRDsEstablished(ki kubernetes.Interface, timeout time.Duration) error {
+	client := apiextensionsclient.New(ki.Core().RESTClient())
+	interval := time.Tick(200 * time.Millisecond)
+	timer := time.After(timeout)
 	for {
 		select {
-		case <-timeoutChan:
-			return err
-		case <-intervalChan:
-			_, err = ext.IPClaims().List(metav1.ListOptions{})
-			if err != nil {
-				continue
+		case <-timer:
+			return fmt.Errorf("timed out waiting for CRDs to get established")
+		case <-interval:
+			established := 0
+			for _, res := range resources {
+				crd, err := client.Apiextensions().CustomResourceDefinitions().Get(fqName(res), metav1.GetOptions{})
+				if err != nil {
+					break
+				}
+				for _, condition := range crd.Status.Conditions {
+					if condition.Type == apiextensionsv1beta1.Established &&
+						condition.Status == apiextensionsv1beta1.ConditionTrue {
+						established++
+					} else {
+						break
+					}
+				}
 			}
-			_, err = ext.IPNodes().List(metav1.ListOptions{})
-			if err != nil {
-				continue
+			if established == len(resources) {
+				return nil
 			}
-			_, err = ext.IPClaimPools().List(metav1.ListOptions{})
-			if err != nil {
-				continue
-			}
-			return nil
 		}
 	}
 }

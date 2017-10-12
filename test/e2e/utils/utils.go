@@ -23,10 +23,11 @@ import (
 	"strings"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api"
 	"k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/pkg/apis/rbac/v1alpha1"
+	v1beta1 "k8s.io/client-go/pkg/apis/rbac/v1beta1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubernetes/pkg/client/unversioned/remotecommand"
@@ -70,7 +71,7 @@ func KubeClient() (*kubernetes.Clientset, error) {
 
 func WaitForReady(clientset *kubernetes.Clientset, pod *v1.Pod) {
 	Eventually(func() error {
-		podUpdated, err := clientset.Core().Pods(pod.Namespace).Get(pod.Name)
+		podUpdated, err := clientset.Core().Pods(pod.Namespace).Get(pod.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -103,7 +104,7 @@ func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) (stri
 	container := pod.Spec.Containers[0].Name
 	var stdout, stderr bytes.Buffer
 	config := LoadConfig()
-	rest := clientset.CoreClient.GetRESTClient()
+	rest := clientset.Core().RESTClient()
 	req := rest.Post().
 		Resource("pods").
 		Name(pod.Name).
@@ -146,15 +147,15 @@ func execute(method string, url *url.URL, config *rest.Config, stdin io.Reader, 
 // AddServiceAccountToAdmins will add system:serviceaccounts to cluster-admin ClusterRole
 func AddServiceAccountToAdmins(c kubernetes.Interface) {
 	By("Adding service account group to cluster-admin role")
-	roleBinding := &v1alpha1.ClusterRoleBinding{
-		ObjectMeta: v1.ObjectMeta{
+	roleBinding := &v1beta1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: "system:serviceaccount-admin",
 		},
-		Subjects: []v1alpha1.Subject{{
+		Subjects: []v1beta1.Subject{{
 			Kind: "Group",
 			Name: "system:serviceaccounts",
 		}},
-		RoleRef: v1alpha1.RoleRef{
+		RoleRef: v1beta1.RoleRef{
 			Kind:     "ClusterRole",
 			Name:     "cluster-admin",
 			APIGroup: "rbac.authorization.k8s.io",

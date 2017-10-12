@@ -30,12 +30,12 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/api"
 	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
@@ -54,7 +54,7 @@ var _ = Describe("Basic", func() {
 		Expect(err).NotTo(HaveOccurred())
 		testutils.AddServiceAccountToAdmins(clientset)
 		namespaceObj := &v1.Namespace{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "e2e-tests-ipcontroller-",
 				Namespace:    "",
 			},
@@ -65,19 +65,20 @@ var _ = Describe("Basic", func() {
 	})
 
 	AfterEach(func() {
-		ipcontroller, err := clientset.Core().Pods(ns.Name).Get(ipcontrollerName)
+		ipcontroller, err := clientset.Core().Pods(ns.Name).Get(ipcontrollerName, metav1.GetOptions{})
 		if err != nil {
 			ensureAddrRemoved(clientset, *ipcontroller, linkToUse, addrToClear)
 		}
 
-		podList, _ := clientset.Core().Pods(ns.Name).List(api.ListOptions{LabelSelector: labels.Everything()})
+		podList, _ := clientset.Core().Pods(ns.Name).List(
+			metav1.ListOptions{LabelSelector: labels.Everything().String()})
 		if CurrentGinkgoTestDescription().Failed {
 			testutils.DumpLogs(clientset, podList.Items...)
 		}
 		for _, pod := range podList.Items {
-			clientset.Core().Pods(pod.Namespace).Delete(pod.Name, &api.DeleteOptions{})
+			clientset.Core().Pods(pod.Namespace).Delete(pod.Name, &metav1.DeleteOptions{})
 		}
-		clientset.Namespaces().Delete(ns.Name, &api.DeleteOptions{})
+		clientset.Namespaces().Delete(ns.Name, &metav1.DeleteOptions{})
 	})
 
 	It("Service should be reachable using assigned external ips [pod-version]", func() {
@@ -117,22 +118,11 @@ var _ = Describe("Register third party resources", func() {
 		testutils.AddServiceAccountToAdmins(clientset)
 		ext, err = extensions.WrapClientsetWithExtensions(clientset, testutils.LoadConfig())
 		Expect(err).NotTo(HaveOccurred())
-		extensions.RemoveThirdPartyResources(clientset)
-		By("verifying that tprs list is empty")
-		Eventually(func() error {
-			tprs, err := clientset.Extensions().ThirdPartyResources().List(api.ListOptions{})
-			if err != nil {
-				return err
-			}
-			if len(tprs.Items) != 0 {
-				return fmt.Errorf("TPR list is not empty %v", tprs.Items)
-			}
-			return nil
-		}, 30*time.Second, 1*time.Second).Should(BeNil())
+		extensions.RemoveCRDs(clientset)
 	})
 
 	AfterEach(func() {
-		extensions.RemoveThirdPartyResources(clientset)
+		extensions.RemoveCRDs(clientset)
 	})
 
 	It("should be reliable", func() {
@@ -140,40 +130,33 @@ var _ = Describe("Register third party resources", func() {
 		// removal of tprs and unregestering of urls are also async operation
 		Eventually(func() error {
 			er := fmt.Errorf("Expected error")
-			_, err := ext.IPClaims().List(api.ListOptions{})
+			_, err := ext.IPClaims().List(metav1.ListOptions{})
 			if err == nil {
 				return er
 			}
-			_, err = ext.IPNodes().List(api.ListOptions{})
+			_, err = ext.IPNodes().List(metav1.ListOptions{})
 			if err == nil {
 				return er
 			}
-			_, err = ext.IPClaimPools().List(api.ListOptions{})
+			_, err = ext.IPClaimPools().List(metav1.ListOptions{})
 			if err == nil {
 				return er
 			}
 			return nil
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 		By("verifying that all required tprs are created")
-		tprs, err := clientset.Extensions().ThirdPartyResources().List(api.ListOptions{})
+		err := extensions.EnsureCRDsExist(clientset)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(len(tprs.Items)).To(BeNumerically("==", 0))
-		err = extensions.EnsureThirdPartyResourcesExist(clientset)
-		Expect(err).NotTo(HaveOccurred())
-		tprs, err = clientset.Extensions().ThirdPartyResources().List(api.ListOptions{})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(len(tprs.Items)).To(BeNumerically("==", 3))
-
 		By("waiting until all tprs will be registered")
-		err = extensions.WaitThirdPartyResources(ext, 20*time.Second, 1*time.Second)
+		err = extensions.WaitCRDsEstablished(clientset, 10*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("verifying that urls are registered and user requests can be served")
-		_, err = ext.IPClaims().List(api.ListOptions{})
+		_, err = ext.IPClaims().List(metav1.ListOptions{})
 		Expect(err).NotTo(HaveOccurred())
-		_, err = ext.IPNodes().List(api.ListOptions{})
+		_, err = ext.IPNodes().List(metav1.ListOptions{})
 		Expect(err).NotTo(HaveOccurred())
-		_, err = ext.IPClaimPools().List(api.ListOptions{})
+		_, err = ext.IPClaimPools().List(metav1.ListOptions{})
 		Expect(err).NotTo(HaveOccurred())
 	})
 })
@@ -198,7 +181,7 @@ var _ = Describe("Third party objects", func() {
 		ext, err = extensions.WrapClientsetWithExtensions(clientset, testutils.LoadConfig())
 		Expect(err).NotTo(HaveOccurred())
 		namespaceObj := &v1.Namespace{
-			ObjectMeta: v1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "e2e-tests-ipcontroller-",
 				Namespace:    "",
 			},
@@ -207,15 +190,15 @@ var _ = Describe("Third party objects", func() {
 		ns, err = clientset.Namespaces().Create(namespaceObj)
 		Expect(err).NotTo(HaveOccurred())
 		By("adding name=<name> label to each node")
-		nodes, err = clientset.Core().Nodes().List(api.ListOptions{})
+		nodes, err = clientset.Core().Nodes().List(metav1.ListOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		for _, node := range nodes.Items {
 			node.Labels["name"] = node.Name
 			_, err := clientset.Core().Nodes().Update(&node)
 			Expect(err).NotTo(HaveOccurred())
 		}
-		extensions.RemoveThirdPartyResources(clientset)
-		err = extensions.EnsureThirdPartyResourcesExist(clientset)
+		extensions.RemoveCRDs(clientset)
+		err = extensions.EnsureCRDsExist(clientset)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -227,7 +210,7 @@ var _ = Describe("Third party objects", func() {
 				return true, nil
 			}
 			ipcontrollerPods, err := clientset.Core().Pods(ns.Name).List(
-				api.ListOptions{LabelSelector: selector},
+				metav1.ListOptions{LabelSelector: selector.String()},
 			)
 			if err != nil {
 				return false, err
@@ -239,24 +222,26 @@ var _ = Describe("Third party objects", func() {
 			return true, nil
 		})
 		By("dumping logs")
-		podList, _ := clientset.Core().Pods(ns.Name).List(api.ListOptions{LabelSelector: labels.Everything()})
+		podList, _ := clientset.Core().Pods(ns.Name).List(metav1.ListOptions{
+			LabelSelector: labels.Everything().String()})
 		if CurrentGinkgoTestDescription().Failed {
 			testutils.DumpLogs(clientset, podList.Items...)
 		}
 		var zero int64 = 0
-		clientset.Namespaces().Delete(ns.Name, &api.DeleteOptions{})
+		clientset.Namespaces().Delete(ns.Name, &metav1.DeleteOptions{})
 		for _, ds := range daemonSets {
-			clientset.Extensions().DaemonSets(ds.Namespace).Delete(ds.Name, &api.DeleteOptions{
+			clientset.Extensions().DaemonSets(ds.Namespace).Delete(ds.Name, &metav1.DeleteOptions{
 				GracePeriodSeconds: &zero})
 		}
 		By("waiting until all pods will be removed")
 		Eventually(func() error {
-			podList, _ := clientset.Core().Pods(ns.Name).List(api.ListOptions{LabelSelector: labels.Everything()})
+			podList, _ := clientset.Core().Pods(ns.Name).List(metav1.ListOptions{
+				LabelSelector: labels.Everything().String()})
 			if len(podList.Items) == 0 {
 				return nil
 			}
 			for _, pod := range podList.Items {
-				clientset.Core().Pods(pod.Namespace).Delete(pod.Name, &api.DeleteOptions{
+				clientset.Core().Pods(pod.Namespace).Delete(pod.Name, &metav1.DeleteOptions{
 					GracePeriodSeconds: &zero,
 				})
 			}
@@ -264,8 +249,8 @@ var _ = Describe("Third party objects", func() {
 		}, 30*time.Second, 2*time.Second).Should(BeNil())
 		By("waiting until namespace will be terminated")
 		Eventually(func() error {
-			clientset.Namespaces().Delete(ns.Name, &api.DeleteOptions{})
-			_, err := clientset.Namespaces().Get(ns.Name)
+			clientset.Namespaces().Delete(ns.Name, &metav1.DeleteOptions{})
+			_, err := clientset.Namespaces().Get(ns.Name, metav1.GetOptions{})
 			if errors.IsNotFound(err) {
 				return nil
 			}
@@ -276,7 +261,7 @@ var _ = Describe("Third party objects", func() {
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 		By("removing ipnodes")
 		eventuallyWrapper(func() (bool, error) {
-			ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+			ipnodes, err := ext.IPNodes().List(metav1.ListOptions{})
 			if err != nil {
 				return false, err
 			}
@@ -284,7 +269,7 @@ var _ = Describe("Third party objects", func() {
 				return true, nil
 			}
 			for _, item := range ipnodes.Items {
-				err := ext.IPNodes().Delete(item.Metadata.Name, &api.DeleteOptions{GracePeriodSeconds: &zero})
+				err := ext.IPNodes().Delete(item.Metadata.Name, &metav1.DeleteOptions{GracePeriodSeconds: &zero})
 				if err != nil {
 					return false, err
 				}
@@ -293,7 +278,7 @@ var _ = Describe("Third party objects", func() {
 		})
 		By("removing ipclaims")
 		eventuallyWrapper(func() (bool, error) {
-			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+			ipclaims, err := ext.IPClaims().List(metav1.ListOptions{})
 			if err != nil {
 				return false, err
 			}
@@ -301,7 +286,7 @@ var _ = Describe("Third party objects", func() {
 				return true, nil
 			}
 			for _, item := range ipclaims.Items {
-				err := ext.IPClaims().Delete(item.Metadata.Name, &api.DeleteOptions{GracePeriodSeconds: &zero})
+				err := ext.IPClaims().Delete(item.Metadata.Name, &metav1.DeleteOptions{GracePeriodSeconds: &zero})
 				if err != nil {
 					return false, err
 				}
@@ -310,12 +295,12 @@ var _ = Describe("Third party objects", func() {
 		})
 		By("removing ipclaim pools")
 		eventuallyWrapper(func() (bool, error) {
-			ipclaimpools, err := ext.IPClaimPools().List(api.ListOptions{})
+			ipclaimpools, err := ext.IPClaimPools().List(metav1.ListOptions{})
 			if err != nil {
 				return false, err
 			}
 			for _, item := range ipclaimpools.Items {
-				err := ext.IPClaimPools().Delete(item.Metadata.Name, &api.DeleteOptions{GracePeriodSeconds: &zero})
+				err := ext.IPClaimPools().Delete(item.Metadata.Name, &metav1.DeleteOptions{GracePeriodSeconds: &zero})
 				if err != nil {
 					return false, err
 				}
@@ -334,7 +319,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("waiting until claims will be listable")
 		Eventually(func() error {
-			_, err := ext.IPClaims().List(api.ListOptions{})
+			_, err := ext.IPClaims().List(metav1.ListOptions{})
 			return err
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 
@@ -346,7 +331,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("verifying that ipclaims created for each external ip")
 		Eventually(func() error {
-			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+			ipclaims, err := ext.IPClaims().List(metav1.ListOptions{})
 			if err != nil {
 				return err
 			}
@@ -376,7 +361,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		Eventually(func() error {
-			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+			ipclaims, err := ext.IPClaims().List(metav1.ListOptions{})
 			if err != nil {
 				return err
 			}
@@ -399,7 +384,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("verifying that there is 2 ipclaims")
 		Eventually(func() error {
-			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+			ipclaims, err := ext.IPClaims().List(metav1.ListOptions{})
 			if err != nil {
 				return err
 			}
@@ -410,7 +395,7 @@ var _ = Describe("Third party objects", func() {
 		}, 30*time.Second, 2*time.Second).Should(BeNil())
 
 		var zero int64 = 0
-		err = clientset.Core().Pods(ns.Name).Delete(pods[0].Name, &api.DeleteOptions{
+		err = clientset.Core().Pods(ns.Name).Delete(pods[0].Name, &metav1.DeleteOptions{
 			GracePeriodSeconds: &zero,
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -425,7 +410,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		Eventually(func() error {
-			ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+			ipclaims, err := ext.IPClaims().List(metav1.ListOptions{})
 			if err != nil {
 				return err
 			}
@@ -450,7 +435,7 @@ var _ = Describe("Third party objects", func() {
 		allocatedIP := "192.168.16.250"
 		poolRanges := [][]string{[]string{"192.168.16.250", "192.168.16.252"}}
 		pool := &extensions.IpClaimPool{
-			Metadata: api.ObjectMeta{Name: "test-pool"},
+			Metadata: metav1.ObjectMeta{Name: "test-pool"},
 			Spec: extensions.IpClaimPoolSpec{
 				CIDR:   poolCIDR,
 				Ranges: poolRanges,
@@ -479,12 +464,12 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(claim.Metadata.Labels).Should(HaveKeyWithValue("ip-pool-name", pool.Metadata.Name))
 
-		svc, err = clientset.Core().Services(ns.Name).Get(svc.ObjectMeta.Name)
+		svc, err = clientset.Core().Services(ns.Name).Get(svc.ObjectMeta.Name, metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(svc.Spec.ExternalIPs).Should(ContainElement(allocatedIP))
 
 		By("Delete service and check that IP was deallocated")
-		err = clientset.Core().Services(ns.Name).Delete(svc.ObjectMeta.Name, &api.DeleteOptions{})
+		err = clientset.Core().Services(ns.Name).Delete(svc.ObjectMeta.Name, &metav1.DeleteOptions{})
 		Expect(err).NotTo(HaveOccurred())
 
 		checkIpClaimsEventualCount(ext, 0)
@@ -496,13 +481,13 @@ var _ = Describe("Third party objects", func() {
 
 	It("Create IP claim pool resource via its client and try to retrieve it from k8s api back", func() {
 		var err error
-		err = extensions.EnsureThirdPartyResourcesExist(clientset)
+		err = extensions.EnsureCRDsExist(clientset)
 		Expect(err).NotTo(HaveOccurred())
 
 		eRanges := [][]string{[]string{"10.20.0.10/24", "10.20.0.20/24"}}
 		eAllocated := map[string]string{"10.20.0.11/24": "testclaim"}
 		ipclaimpool := &extensions.IpClaimPool{
-			Metadata: api.ObjectMeta{Name: "testclaimpool"},
+			Metadata: metav1.ObjectMeta{Name: "testclaimpool"},
 			Spec: extensions.IpClaimPoolSpec{
 				CIDR:      "10.20.0.0/24",
 				Ranges:    eRanges,
@@ -527,11 +512,11 @@ var _ = Describe("Third party objects", func() {
 
 	It("IpClaim watcher should work with resource version as expected", func() {
 		By("ensuring that third party resources are created")
-		err := extensions.EnsureThirdPartyResourcesExist(clientset)
+		err := extensions.EnsureCRDsExist(clientset)
 		By("creating ipclaim object")
 		Expect(err).NotTo(HaveOccurred())
 		ipclaim := &extensions.IpClaim{
-			Metadata: api.ObjectMeta{
+			Metadata: metav1.ObjectMeta{
 				Name:   "watchclaim",
 				Labels: map[string]string{"ipnode": "test"}},
 			Spec: extensions.IpClaimSpec{
@@ -547,17 +532,17 @@ var _ = Describe("Third party objects", func() {
 		testutils.Logf("second resouce version %v\n", second.Metadata.ResourceVersion)
 		Expect(err).NotTo(HaveOccurred())
 		By("creating watcher and expecting two events")
-		watcher, err := ext.IPClaims().Watch(api.ListOptions{})
+		watcher, err := ext.IPClaims().Watch(metav1.ListOptions{})
 		defer watcher.Stop()
 		Expect(err).NotTo(HaveOccurred())
 		verifyEventsCount(watcher, 2)
 		By("creating watcher with resource version and expecting one event")
-		versionWatcher, err := ext.IPClaims().Watch(api.ListOptions{
+		versionWatcher, err := ext.IPClaims().Watch(metav1.ListOptions{
 			ResourceVersion: first.Metadata.ResourceVersion,
 		})
 		defer versionWatcher.Stop()
 		Expect(err).NotTo(HaveOccurred())
-		err = ext.IPClaims().Delete(second.Metadata.Name, &api.DeleteOptions{})
+		err = ext.IPClaims().Delete(second.Metadata.Name, &metav1.DeleteOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		verifyEventsCount(versionWatcher, 2)
 	})
@@ -575,7 +560,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("creating ipclaim that is not assigned to any host")
 		fake := &extensions.IpClaim{
-			Metadata: api.ObjectMeta{Name: "fakeclaim"},
+			Metadata: metav1.ObjectMeta{Name: "fakeclaim"},
 		}
 		_, err = ext.IPClaims().Create(fake)
 		Expect(err).NotTo(HaveOccurred())
@@ -583,7 +568,7 @@ var _ = Describe("Third party objects", func() {
 		By("creating ipclaim assigned to host with name test")
 		claimLabels := map[string]string{"ipnode": "test"}
 		ipclaim := &extensions.IpClaim{
-			Metadata: api.ObjectMeta{
+			Metadata: metav1.ObjectMeta{
 				Name:   "testclaim",
 				Labels: map[string]string{"ipnode": "test"}},
 			Spec: extensions.IpClaimSpec{
@@ -594,8 +579,8 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("verify that label selector works")
-		ipclaims, err := ext.IPClaims().List(api.ListOptions{
-			LabelSelector: labels.Set(claimLabels).AsSelector(),
+		ipclaims, err := ext.IPClaims().List(metav1.ListOptions{
+			LabelSelector: labels.Set(claimLabels).AsSelector().String(),
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(len(ipclaims.Items)).To(BeNumerically("==", 1))
@@ -624,7 +609,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("creating ipclaim assigned to host with name test")
 		ipclaim := &extensions.IpClaim{
-			Metadata: api.ObjectMeta{
+			Metadata: metav1.ObjectMeta{
 				Name:   "testclaim",
 				Labels: map[string]string{"ipnode": "test"}},
 			Spec: extensions.IpClaimSpec{
@@ -676,7 +661,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("waiting until both nodes will be registered")
 		Eventually(func() error {
-			ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+			ipnodes, err := ext.IPNodes().List(metav1.ListOptions{})
 			if err != nil {
 				return err
 			}
@@ -709,14 +694,14 @@ var _ = Describe("Third party objects", func() {
 
 		By("shuting down scheduler")
 		var zero int64 = 0
-		err = clientset.Core().Pods(ns.Name).Delete(scheduler.Name, &api.DeleteOptions{
+		err = clientset.Core().Pods(ns.Name).Delete(scheduler.Name, &metav1.DeleteOptions{
 			GracePeriodSeconds: &zero,
 		})
 		Expect(err).NotTo(HaveOccurred())
 
 		By("verifying that scheduler pod is gone")
 		Eventually(func() error {
-			_, err = clientset.Core().Pods(ns.Name).Get(scheduler.Name)
+			_, err = clientset.Core().Pods(ns.Name).Get(scheduler.Name, metav1.GetOptions{})
 			if errors.IsNotFound(err) {
 				return nil
 			}
@@ -728,7 +713,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(len(claims)).To(BeNumerically("==", 3))
 
 		By("deleting one of services")
-		err = clientset.Core().Services(ns.Name).Delete(nginx2Name, &api.DeleteOptions{})
+		err = clientset.Core().Services(ns.Name).Delete(nginx2Name, &metav1.DeleteOptions{})
 		Expect(err).NotTo(HaveOccurred())
 
 		By("starting scheduler again")
@@ -744,7 +729,7 @@ var _ = Describe("Third party objects", func() {
 		verifyServiceReachable(nginx1Port, externalIPs1...)
 
 		By("deleting service and verifying that all IP claims were removed")
-		err = clientset.Core().Services(ns.Name).Delete(nginx1Name, &api.DeleteOptions{})
+		err = clientset.Core().Services(ns.Name).Delete(nginx1Name, &metav1.DeleteOptions{})
 		Eventually(func() int {
 			return len(getAllocatedClaims(ext))
 		}, 15*time.Second, 1*time.Second).Should(BeEquivalentTo(0))
@@ -769,7 +754,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("waiting until both nodes will be registered")
 		Eventually(func() error {
-			ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+			ipnodes, err := ext.IPNodes().List(metav1.ListOptions{})
 			if err != nil {
 				return err
 			}
@@ -808,7 +793,7 @@ var _ = Describe("Third party objects", func() {
 		By("restarting scheduler and verifying that claim allocation will stay the same")
 		allocatedClaims := getAllocatedClaims(ext)
 		var zero int64 = 0
-		err = clientset.Core().Pods(ns.Name).Delete(scheduler.Name, &api.DeleteOptions{
+		err = clientset.Core().Pods(ns.Name).Delete(scheduler.Name, &metav1.DeleteOptions{
 			GracePeriodSeconds: &zero,
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -883,7 +868,7 @@ var _ = Describe("Third party objects", func() {
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 
 		By("deleting service and verifying that ips are purged from second controller")
-		err = clientset.Core().Services(ns.Name).Delete(nginxName, &api.DeleteOptions{})
+		err = clientset.Core().Services(ns.Name).Delete(nginxName, &metav1.DeleteOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func() error {
 			if ips := getManagedIps(clientset, dsPods[1], network, "dind0"); ips == nil {
@@ -913,7 +898,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("waiting until both nodes will be registered")
 		Eventually(func() error {
-			ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+			ipnodes, err := ext.IPNodes().List(metav1.ListOptions{})
 			if err != nil {
 				return err
 			}
@@ -952,7 +937,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(totalCount).To(BeNumerically("==", len(externalIPs)))
 
 		By("adding nodeSelector which will exclude node " + nodes.Items[0].Name)
-		ds, err = clientset.Extensions().DaemonSets(ns.Name).Get("externalipcontroller")
+		ds, err = clientset.Extensions().DaemonSets(ns.Name).Get("externalipcontroller", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		ds.Spec.Template.Spec.NodeSelector = map[string]string{
 			"name": nodes.Items[0].Name,
@@ -961,7 +946,7 @@ var _ = Describe("Third party objects", func() {
 		Expect(err).NotTo(HaveOccurred())
 		var zero int64 = 0
 		for _, pod := range dsPods {
-			err := clientset.Core().Pods(ns.Name).Delete(pod.Name, &api.DeleteOptions{
+			err := clientset.Core().Pods(ns.Name).Delete(pod.Name, &metav1.DeleteOptions{
 				GracePeriodSeconds: &zero,
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -1001,7 +986,7 @@ var _ = Describe("Third party objects", func() {
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 
 		By("remove nodeSelector from daemon set and wait until both of controllers will be running")
-		ds, err = clientset.Extensions().DaemonSets(ns.Name).Get("externalipcontroller")
+		ds, err = clientset.Extensions().DaemonSets(ns.Name).Get("externalipcontroller", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		ds.Spec.Template.Spec.NodeSelector = map[string]string{}
 		ds, err = clientset.Extensions().DaemonSets(ns.Name).Update(ds)
@@ -1049,7 +1034,7 @@ var _ = Describe("Third party objects", func() {
 
 		By("waiting until both nodes will be registered")
 		Eventually(func() error {
-			ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+			ipnodes, err := ext.IPNodes().List(metav1.ListOptions{})
 			if err != nil {
 				return err
 			}
@@ -1083,7 +1068,7 @@ var _ = Describe("Third party objects", func() {
 			return nil
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 
-		ipnodes, err := ext.IPNodes().List(api.ListOptions{})
+		ipnodes, err := ext.IPNodes().List(metav1.ListOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		for _, node := range ipnodes.Items {
 			node.Revision = 10000000
@@ -1111,7 +1096,7 @@ func newPrivilegedPodSpec(containerName, imageName string, cmd []string, hostNet
 
 func newPod(podName, containerName, imageName string, cmd []string, labels map[string]string, hostNetwork bool, privileged bool) *v1.Pod {
 	return &v1.Pod{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:   podName,
 			Labels: labels,
 		},
@@ -1121,13 +1106,13 @@ func newPod(podName, containerName, imageName string, cmd []string, labels map[s
 
 func newDaemonSet(dsName, containerName, imageName string, cmd []string, labels map[string]string, hostNetwork, privileged bool) *v1beta1.DaemonSet {
 	return &v1beta1.DaemonSet{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:   dsName,
 			Labels: labels,
 		},
 		Spec: v1beta1.DaemonSetSpec{
 			Template: v1.PodTemplateSpec{
-				ObjectMeta: v1.ObjectMeta{
+				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
 				},
 				Spec: newPrivilegedPodSpec(containerName, imageName, cmd, hostNetwork, privileged),
@@ -1139,11 +1124,11 @@ func newDaemonSet(dsName, containerName, imageName string, cmd []string, labels 
 
 func newDeployment(deploymentName string, replicas int32, podLabels map[string]string, imageName string, image string, cmd []string) *v1beta1.Deployment {
 	return &v1beta1.Deployment{
-		ObjectMeta: v1.ObjectMeta{Name: deploymentName},
+		ObjectMeta: metav1.ObjectMeta{Name: deploymentName},
 		Spec: v1beta1.DeploymentSpec{
 			Replicas: &replicas,
 			Template: v1.PodTemplateSpec{
-				ObjectMeta: v1.ObjectMeta{
+				ObjectMeta: metav1.ObjectMeta{
 					Labels: podLabels,
 				},
 				Spec: newPrivilegedPodSpec(image, imageName, cmd, false, false),
@@ -1154,7 +1139,7 @@ func newDeployment(deploymentName string, replicas int32, podLabels map[string]s
 
 func newService(serviceName string, labels map[string]string, ports []v1.ServicePort, externalIPs []string) *v1.Service {
 	return &v1.Service{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: serviceName,
 		},
 		Spec: v1.ServiceSpec{
@@ -1201,7 +1186,7 @@ func verifyServiceReachable(port int32, ips ...string) {
 
 func getPodsByLabels(clientset *kubernetes.Clientset, ns *v1.Namespace, podLabels map[string]string) []v1.Pod {
 	selector := labels.Set(podLabels).AsSelector()
-	pods, err := clientset.Pods(ns.Name).List(api.ListOptions{LabelSelector: selector})
+	pods, err := clientset.Pods(ns.Name).List(metav1.ListOptions{LabelSelector: selector.String()})
 	Expect(err).NotTo(HaveOccurred())
 	return pods.Items
 }
@@ -1255,7 +1240,7 @@ func eventuallyWrapper(f wait.ConditionFunc) {
 
 func getAllocatedClaims(ext extensions.ExtensionsClientset) map[string]string {
 	allocatedClaims := map[string]string{}
-	ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+	ipclaims, err := ext.IPClaims().List(metav1.ListOptions{})
 	Expect(err).NotTo(HaveOccurred())
 	for _, ipclaim := range ipclaims.Items {
 		allocatedClaims[ipclaim.Spec.Cidr] = ipclaim.Spec.NodeName
@@ -1265,7 +1250,7 @@ func getAllocatedClaims(ext extensions.ExtensionsClientset) map[string]string {
 
 func checkIpClaimsEventualCount(ext extensions.ExtensionsClientset, count int) {
 	Eventually(func() error {
-		ipclaims, err := ext.IPClaims().List(api.ListOptions{})
+		ipclaims, err := ext.IPClaims().List(metav1.ListOptions{})
 		if err != nil {
 			return err
 		}

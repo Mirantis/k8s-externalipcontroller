@@ -41,3 +41,5 @@ import:
   version: v1.1.12
 - package: github.com/emicklei/go-restful
   version: v1.2
+- package: k8s.io/apiextensions-apiserver
+- package: k8s.io/api

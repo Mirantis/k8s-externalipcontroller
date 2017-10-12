@@ -60,11 +60,11 @@ func InitController() error {
 	if err != nil {
 		return err
 	}
-	err = extensions.EnsureThirdPartyResourcesExist(c.Clientset)
+	err = extensions.EnsureCRDsExist(c.Clientset)
 	if err != nil {
 		return err
 	}
-	err = extensions.WaitThirdPartyResources(c.ExtensionsClientset, 10*time.Second, 1*time.Second)
+	err = extensions.WaitCRDsEstablished(c.Clientset, 10*time.Second)
 	if err != nil {
 		return err
 	}
