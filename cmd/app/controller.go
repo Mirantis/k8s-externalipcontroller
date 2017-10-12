@@ -22,8 +22,8 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/1.5/rest"
-	"k8s.io/client-go/1.5/tools/clientcmd"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 func init() {

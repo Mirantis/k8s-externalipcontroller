@@ -23,12 +23,13 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/utils"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"k8s.io/client-go/1.5/pkg/api"
-	"k8s.io/client-go/1.5/pkg/api/errors"
-	"k8s.io/client-go/1.5/pkg/api/unversioned"
-	fcache "k8s.io/client-go/1.5/tools/cache/testing"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	fcache "k8s.io/client-go/tools/cache/testing"
 )
 
 type fakeIpHandler struct {
@@ -64,7 +65,7 @@ func TestClaimWatcher(t *testing.T) {
 	go c.claimWatcher(stop)
 	go c.worker()
 	claim := &extensions.IpClaim{
-		Metadata: api.ObjectMeta{Name: "10.10.0.2-24"},
+		Metadata: metav1.ObjectMeta{Name: "10.10.0.2-24"},
 		Spec:     extensions.IpClaimSpec{Cidr: "10.10.0.2/24", NodeName: "first"},
 	}
 	fiphandler.On("Add", c.Iface, claim.Spec.Cidr).Return(nil)
@@ -95,12 +96,12 @@ func TestHeartbeatIpNode(t *testing.T) {
 		Uid:                 "first",
 		ExtensionsClientset: ext,
 	}
-	qualResource := unversioned.GroupResource{
+	qualResource := schema.GroupResource{
 		Group:    "ipcontroller",
 		Resource: "ipnode",
 	}
 	ipnode := &extensions.IpNode{
-		Metadata: api.ObjectMeta{Name: c.Uid},
+		Metadata: metav1.ObjectMeta{Name: c.Uid},
 	}
 	ext.Ipnodes.On("Get", c.Uid).Return(&extensions.IpNode{}, errors.NewNotFound(qualResource, c.Uid))
 	ext.Ipnodes.On("Create", mock.Anything).Return(nil)

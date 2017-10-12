@@ -22,13 +22,14 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 	"github.com/golang/glog"
 
-	"k8s.io/client-go/1.5/kubernetes"
-	"k8s.io/client-go/1.5/pkg/api"
-	"k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/pkg/runtime"
-	"k8s.io/client-go/1.5/pkg/watch"
-	"k8s.io/client-go/1.5/rest"
-	"k8s.io/client-go/1.5/tools/cache"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/pkg/api"
+	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 )
 
 type ExternalIpController struct {
@@ -50,11 +51,11 @@ func NewExternalIpController(config *rest.Config, uid, iface, mask string, resyn
 	}
 
 	lw := &cache.ListWatch{
-		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
-			return clientset.Core().Services(api.NamespaceAll).List(api.ListOptions{})
+		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			return clientset.Core().Services(api.NamespaceAll).List(metav1.ListOptions{})
 		},
-		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
-			return clientset.Core().Services(api.NamespaceAll).Watch(api.ListOptions{})
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			return clientset.Core().Services(api.NamespaceAll).Watch(metav1.ListOptions{})
 		},
 	}
 	return &ExternalIpController{

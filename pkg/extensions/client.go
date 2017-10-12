@@ -18,13 +18,15 @@ import (
 	"bytes"
 	"encoding/json"
 
-	"k8s.io/client-go/1.5/kubernetes"
-	"k8s.io/client-go/1.5/pkg/api"
-	"k8s.io/client-go/1.5/pkg/api/unversioned"
-	"k8s.io/client-go/1.5/pkg/runtime"
-	"k8s.io/client-go/1.5/pkg/runtime/serializer"
-	"k8s.io/client-go/1.5/pkg/watch"
-	"k8s.io/client-go/1.5/rest"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/pkg/api"
+	"k8s.io/client-go/rest"
 )
 
 func WrapClientsetWithExtensions(clientset *kubernetes.Clientset, config *rest.Config) (*WrappedClientset, error) {
@@ -42,7 +44,7 @@ func WrapClientsetWithExtensions(clientset *kubernetes.Clientset, config *rest.C
 func extensionClient(config *rest.Config) (*rest.RESTClient, error) {
 	config.APIPath = "/apis"
 	config.ContentConfig = rest.ContentConfig{
-		GroupVersion: &unversioned.GroupVersion{
+		GroupVersion: &schema.GroupVersion{
 			Group:   GroupName,
 			Version: Version,
 		},
@@ -65,27 +67,27 @@ type WrappedClientset struct {
 type IPClaimsInterface interface {
 	Create(*IpClaim) (*IpClaim, error)
 	Get(name string) (*IpClaim, error)
-	List(api.ListOptions) (*IpClaimList, error)
-	Watch(api.ListOptions) (watch.Interface, error)
+	List(metav1.ListOptions) (*IpClaimList, error)
+	Watch(metav1.ListOptions) (watch.Interface, error)
 	Update(*IpClaim) (*IpClaim, error)
-	Delete(string, *api.DeleteOptions) error
+	Delete(string, *metav1.DeleteOptions) error
 }
 
 type IPNodesInterface interface {
 	Create(*IpNode) (*IpNode, error)
 	Get(name string) (*IpNode, error)
-	List(api.ListOptions) (*IpNodeList, error)
-	Watch(api.ListOptions) (watch.Interface, error)
+	List(metav1.ListOptions) (*IpNodeList, error)
+	Watch(metav1.ListOptions) (watch.Interface, error)
 	Update(*IpNode) (*IpNode, error)
-	Delete(string, *api.DeleteOptions) error
+	Delete(string, *metav1.DeleteOptions) error
 }
 
 type IPClaimPoolsInterface interface {
 	Create(*IpClaimPool) (*IpClaimPool, error)
 	Get(name string) (*IpClaimPool, error)
-	List(api.ListOptions) (*IpClaimPoolList, error)
+	List(metav1.ListOptions) (*IpClaimPoolList, error)
 	Update(*IpClaimPool) (*IpClaimPool, error)
-	Delete(string, *api.DeleteOptions) error
+	Delete(string, *metav1.DeleteOptions) error
 }
 
 func (w *WrappedClientset) IPNodes() IPNodesInterface {
@@ -129,12 +131,16 @@ func (c *IPNodesClient) Create(ipnode *IpNode) (result *IpNode, err error) {
 	return result, decodeResponseInto(resp, result)
 }
 
-func (c *IPNodesClient) List(opts api.ListOptions) (result *IpNodeList, err error) {
+func (c *IPNodesClient) List(opts metav1.ListOptions) (result *IpNodeList, err error) {
 	result = &IpNodeList{}
+	selector, err := labels.Parse(opts.LabelSelector)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.client.Get().
 		Namespace("default").
 		Resource("ipnodes").
-		LabelsSelectorParam(opts.LabelSelector).
+		LabelsSelectorParam(selector).
 		DoRaw()
 	if err != nil {
 		return result, err
@@ -142,7 +148,7 @@ func (c *IPNodesClient) List(opts api.ListOptions) (result *IpNodeList, err erro
 	return result, decodeResponseInto(resp, result)
 }
 
-func (c *IPNodesClient) Watch(opts api.ListOptions) (watch.Interface, error) {
+func (c *IPNodesClient) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 	return c.client.Get().
 		Namespace("default").
 		Prefix("watch").
@@ -165,7 +171,7 @@ func (c *IPNodesClient) Update(ipnode *IpNode) (result *IpNode, err error) {
 	return result, decodeResponseInto(resp, result)
 }
 
-func (c *IPNodesClient) Delete(name string, options *api.DeleteOptions) error {
+func (c *IPNodesClient) Delete(name string, options *metav1.DeleteOptions) error {
 	return c.client.Delete().
 		Namespace("default").
 		Resource("ipnodes").
@@ -213,12 +219,16 @@ func (c *IpClaimClient) Create(ipclaim *IpClaim) (result *IpClaim, err error) {
 	return result, decodeResponseInto(resp, result)
 }
 
-func (c *IpClaimClient) List(opts api.ListOptions) (result *IpClaimList, err error) {
+func (c *IpClaimClient) List(opts metav1.ListOptions) (result *IpClaimList, err error) {
 	result = &IpClaimList{}
+	selector, err := labels.Parse(opts.LabelSelector)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.client.Get().
 		Namespace("default").
 		Resource("ipclaims").
-		LabelsSelectorParam(opts.LabelSelector).
+		LabelsSelectorParam(selector).
 		DoRaw()
 	if err != nil {
 		return result, err
@@ -226,7 +236,7 @@ func (c *IpClaimClient) List(opts api.ListOptions) (result *IpClaimList, err err
 	return result, decodeResponseInto(resp, result)
 }
 
-func (c *IpClaimClient) Watch(opts api.ListOptions) (watch.Interface, error) {
+func (c *IpClaimClient) Watch(opts metav1.ListOptions) (watch.Interface, error) {
 	return c.client.Get().
 		Namespace("default").
 		Prefix("watch").
@@ -249,7 +259,7 @@ func (c *IpClaimClient) Update(ipclaim *IpClaim) (result *IpClaim, err error) {
 	return result, decodeResponseInto(resp, result)
 }
 
-func (c *IpClaimClient) Delete(name string, options *api.DeleteOptions) error {
+func (c *IpClaimClient) Delete(name string, options *metav1.DeleteOptions) error {
 	return c.client.Delete().
 		Namespace("default").
 		Resource("ipclaims").
@@ -284,7 +294,7 @@ func (c *IpClaimPoolClient) Create(ipclaimpool *IpClaimPool) (result *IpClaimPoo
 	return result, decodeResponseInto(resp, result)
 }
 
-func (c *IpClaimPoolClient) List(opts api.ListOptions) (result *IpClaimPoolList, err error) {
+func (c *IpClaimPoolClient) List(opts metav1.ListOptions) (result *IpClaimPoolList, err error) {
 	result = &IpClaimPoolList{}
 	resp, err := c.client.Get().
 		Namespace("default").
@@ -297,7 +307,7 @@ func (c *IpClaimPoolClient) List(opts api.ListOptions) (result *IpClaimPoolList,
 	return result, decodeResponseInto(resp, result)
 }
 
-func (c *IpClaimPoolClient) Delete(name string, options *api.DeleteOptions) error {
+func (c *IpClaimPoolClient) Delete(name string, options *metav1.DeleteOptions) error {
 	return c.client.Delete().
 		Namespace("default").
 		Resource("ipclaimpools").

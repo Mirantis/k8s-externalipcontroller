@@ -18,8 +18,8 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 
 	"github.com/stretchr/testify/mock"
-	"k8s.io/client-go/1.5/pkg/api"
-	"k8s.io/client-go/1.5/pkg/watch"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/watch"
 )
 
 type FakeExtClientset struct {
@@ -55,7 +55,7 @@ func (f *fakeIpClaims) Create(ipclaim *extensions.IpClaim) (*extensions.IpClaim,
 	return ipclaim, args.Error(0)
 }
 
-func (f *fakeIpClaims) List(opts api.ListOptions) (*extensions.IpClaimList, error) {
+func (f *fakeIpClaims) List(opts metav1.ListOptions) (*extensions.IpClaimList, error) {
 	args := f.Called(opts)
 	return args.Get(0).(*extensions.IpClaimList), args.Error(1)
 }
@@ -65,12 +65,12 @@ func (f *fakeIpClaims) Update(ipclaim *extensions.IpClaim) (*extensions.IpClaim,
 	return ipclaim, args.Error(0)
 }
 
-func (f *fakeIpClaims) Delete(name string, opts *api.DeleteOptions) error {
+func (f *fakeIpClaims) Delete(name string, opts *metav1.DeleteOptions) error {
 	args := f.Called(name, opts)
 	return args.Error(0)
 }
 
-func (f *fakeIpClaims) Watch(_ api.ListOptions) (watch.Interface, error) {
+func (f *fakeIpClaims) Watch(_ metav1.ListOptions) (watch.Interface, error) {
 	return nil, nil
 }
 
@@ -83,7 +83,7 @@ func (f *fakeIpNodes) Create(ipnode *extensions.IpNode) (*extensions.IpNode, err
 	return ipnode, args.Error(0)
 }
 
-func (f *fakeIpNodes) List(opts api.ListOptions) (*extensions.IpNodeList, error) {
+func (f *fakeIpNodes) List(opts metav1.ListOptions) (*extensions.IpNodeList, error) {
 	args := f.Called(opts)
 	return args.Get(0).(*extensions.IpNodeList), args.Error(1)
 }
@@ -93,7 +93,7 @@ func (f *fakeIpNodes) Update(ipnode *extensions.IpNode) (*extensions.IpNode, err
 	return args.Get(0).(*extensions.IpNode), args.Error(1)
 }
 
-func (f *fakeIpNodes) Delete(name string, opts *api.DeleteOptions) error {
+func (f *fakeIpNodes) Delete(name string, opts *metav1.DeleteOptions) error {
 	args := f.Called(name, opts)
 	return args.Error(0)
 }
@@ -103,7 +103,7 @@ func (f *fakeIpNodes) Get(name string) (*extensions.IpNode, error) {
 	return args.Get(0).(*extensions.IpNode), args.Error(1)
 }
 
-func (f *fakeIpNodes) Watch(_ api.ListOptions) (watch.Interface, error) {
+func (f *fakeIpNodes) Watch(_ metav1.ListOptions) (watch.Interface, error) {
 	return nil, nil
 }
 
@@ -116,7 +116,7 @@ func (f *fakeIpClaimPools) Create(ipclaimpool *extensions.IpClaimPool) (*extensi
 	return ipclaimpool, args.Error(0)
 }
 
-func (f *fakeIpClaimPools) List(opts api.ListOptions) (*extensions.IpClaimPoolList, error) {
+func (f *fakeIpClaimPools) List(opts metav1.ListOptions) (*extensions.IpClaimPoolList, error) {
 	args := f.Called(opts)
 	return args.Get(0).(*extensions.IpClaimPoolList), args.Error(1)
 }
@@ -126,7 +126,7 @@ func (f *fakeIpClaimPools) Update(ipclaimpool *extensions.IpClaimPool) (*extensi
 	return args.Get(0).(*extensions.IpClaimPool), args.Error(1)
 }
 
-func (f *fakeIpClaimPools) Delete(name string, opts *api.DeleteOptions) error {
+func (f *fakeIpClaimPools) Delete(name string, opts *metav1.DeleteOptions) error {
 	args := f.Called(name, opts)
 	return args.Error(0)
 }

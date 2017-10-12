@@ -23,8 +23,8 @@ import (
 	controller "github.com/Mirantis/k8s-externalipcontroller/pkg"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 
-	"k8s.io/client-go/1.5/pkg/api/v1"
-	fcache "k8s.io/client-go/1.5/tools/cache/testing"
+	"k8s.io/client-go/pkg/api/v1"
+	fcache "k8s.io/client-go/tools/cache/testing"
 
 	"github.com/vishvananda/netlink"
 

@@ -25,17 +25,18 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 
 	"github.com/golang/glog"
-	"k8s.io/client-go/1.5/kubernetes"
-	"k8s.io/client-go/1.5/pkg/api"
-	apierrors "k8s.io/client-go/1.5/pkg/api/errors"
-	"k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/pkg/fields"
-	"k8s.io/client-go/1.5/pkg/labels"
-	"k8s.io/client-go/1.5/pkg/runtime"
-	"k8s.io/client-go/1.5/pkg/types"
-	"k8s.io/client-go/1.5/pkg/watch"
-	"k8s.io/client-go/1.5/rest"
-	"k8s.io/client-go/1.5/tools/cache"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/pkg/api"
+	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 )
 
 const (
@@ -54,10 +55,10 @@ func NewIPClaimScheduler(config *rest.Config, mask string, monitorInterval time.
 	}
 
 	serviceSource := &cache.ListWatch{
-		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
+		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 			return clientset.Core().Services(api.NamespaceAll).List(options)
 		},
-		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 			return clientset.Core().Services(api.NamespaceAll).Watch(options)
 		},
 	}
@@ -169,12 +170,16 @@ func (s *ipClaimScheduler) serviceWatcher(stop chan struct{}) {
 func (s *ipClaimScheduler) processExternalIPs(svc *v1.Service) {
 	foundAuto := false
 
-	pools, err := s.ExtensionsClientset.IPClaimPools().List(api.ListOptions{})
+	pools, err := s.ExtensionsClientset.IPClaimPools().List(metav1.ListOptions{})
 	if err != nil {
 		glog.Errorf("Error retrieving list of IP pools. Details: %v", err)
 	}
 
+	glog.V(2).Infof("Processing svc %s with external ips %v", svc.Name, svc.Spec.ExternalIPs)
 	for _, ip := range svc.Spec.ExternalIPs {
+		glog.V(2).Infof(
+			"Check IP %s of a service %s for an intersection with pools: %v",
+			ip, svc.Name, pools)
 		if p := poolByAllocatedIP(ip, pools); p != nil {
 			foundAuto = true
 			continue
@@ -381,7 +386,7 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 				glog.Errorf("Unable to update IP claim '%v'. Details: %v", claim.Metadata.Name, err)
 			}
 		case cache.Deleted:
-			err := client.Delete(claim.Metadata.Name, &api.DeleteOptions{})
+			err := client.Delete(claim.Metadata.Name, &metav1.DeleteOptions{})
 			if err != nil {
 				glog.Errorf("Unable to delete IP claim '%v'. Details: %v", claim.Metadata.Name, err)
 			}
@@ -430,7 +435,7 @@ func (s *ipClaimScheduler) getIPClaimByIP(ip string, pools *extensions.IpClaimPo
 }
 
 func (s *ipClaimScheduler) getIPClaimPoolList() *extensions.IpClaimPoolList {
-	pools, err := s.ExtensionsClientset.IPClaimPools().List(api.ListOptions{})
+	pools, err := s.ExtensionsClientset.IPClaimPools().List(metav1.ListOptions{})
 	if err != nil {
 		glog.Errorf("Error retrieving list of IP pools. Details: %v", err)
 	}
@@ -453,9 +458,9 @@ func (s *ipClaimScheduler) deleteIPClaimAndAllocation(ip string, pools *extensio
 }
 
 // returns list of owner references that are relevant at the moment
-func (s *ipClaimScheduler) ownersAlive(claim *extensions.IpClaim) []api.OwnerReference {
+func (s *ipClaimScheduler) ownersAlive(claim *extensions.IpClaim) []metav1.OwnerReference {
 	// only services can be the claim owners for now
-	owners := []api.OwnerReference{}
+	owners := []metav1.OwnerReference{}
 	for _, owner := range claim.Metadata.OwnerReferences {
 		_, exists, err := s.serviceStore.GetByKey(string(owner.UID))
 		if err != nil {
@@ -467,7 +472,7 @@ func (s *ipClaimScheduler) ownersAlive(claim *extensions.IpClaim) []api.OwnerRef
 			// "an empty namespace may not be set when a resource name is provided" error is thrown when
 			// calling Services.Get w/o a namespace
 			if len(ns_name) == 2 {
-				_, err = s.Clientset.Core().Services(ns_name[0]).Get(ns_name[1])
+				_, err = s.Clientset.Core().Services(ns_name[0]).Get(ns_name[1], metav1.GetOptions{})
 			} else {
 				glog.Errorf("Checking claim '%v' owners: cannot get namespace for service '%v'", claim.Metadata.Name, owner.UID)
 			}
@@ -501,7 +506,7 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
 	if claim.Spec.NodeName != "" && s.isLive(claim.Spec.NodeName) {
 		return nil
 	}
-	ipnodes, err := s.ExtensionsClientset.IPNodes().List(api.ListOptions{})
+	ipnodes, err := s.ExtensionsClientset.IPNodes().List(metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -528,7 +533,7 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time
 		case <-stop:
 			return
 		case <-ticker:
-			ipnodes, err := s.ExtensionsClientset.IPNodes().List(api.ListOptions{})
+			ipnodes, err := s.ExtensionsClientset.IPNodes().List(metav1.ListOptions{})
 			if err != nil {
 				glog.Errorf("Error getting IP nodes: %v", err)
 			}
@@ -552,8 +557,8 @@ func (s *ipClaimScheduler) monitorIPNodes(stop chan struct{}, ticker <-chan time
 					s.liveSync.Unlock()
 					labelSelector := labels.Set(map[string]string{"ipnode": name})
 					ipclaims, err := s.ExtensionsClientset.IPClaims().List(
-						api.ListOptions{
-							LabelSelector: labelSelector.AsSelector(),
+						metav1.ListOptions{
+							LabelSelector: labelSelector.String(),
 						},
 					)
 					if err != nil {
@@ -621,15 +626,15 @@ func makeIPClaim(ip, mask string, svc *v1.Service) *extensions.IpClaim {
 
 	glog.V(2).Infof("Creating IP claim '%v'", key)
 
-	meta := api.ObjectMeta{Name: key}
+	meta := metav1.ObjectMeta{Name: key}
 	if svc != nil {
 		svc_key, err := cache.MetaNamespaceKeyFunc(svc)
 		if err != nil {
 			return nil
 		}
 		ctrl := false
-		ownerRef := api.OwnerReference{APIVersion: "v1", Kind: "Service", Name: svc.Name, UID: types.UID(svc_key), Controller: &ctrl}
-		meta.OwnerReferences = []api.OwnerReference{ownerRef}
+		ownerRef := metav1.OwnerReference{APIVersion: "v1", Kind: "Service", Name: svc.Name, UID: types.UID(svc_key), Controller: &ctrl}
+		meta.OwnerReferences = []metav1.OwnerReference{ownerRef}
 	}
 
 	ipclaim := &extensions.IpClaim{

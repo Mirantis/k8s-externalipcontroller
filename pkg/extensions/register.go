@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/client-go/1.5/kubernetes"
-	"k8s.io/client-go/1.5/pkg/api"
-	"k8s.io/client-go/1.5/pkg/apis/extensions/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
 func EnsureThirdPartyResourcesExist(ki kubernetes.Interface) error {
@@ -37,13 +37,13 @@ func EnsureThirdPartyResourcesExist(ki kubernetes.Interface) error {
 func RemoveThirdPartyResources(ki kubernetes.Interface) {
 	for _, name := range []string{"ip-node", "ip-claim", "ip-claim-pool"} {
 		fullName := strings.Join([]string{name, GroupName}, ".")
-		ki.Extensions().ThirdPartyResources().Delete(fullName, &api.DeleteOptions{})
+		ki.Extensions().ThirdPartyResources().Delete(fullName, &metav1.DeleteOptions{})
 	}
 }
 
 func ensureThirdPartyResource(ki kubernetes.Interface, name string) error {
 	fullName := strings.Join([]string{name, GroupName}, ".")
-	_, err := ki.Extensions().ThirdPartyResources().Get(fullName)
+	_, err := ki.Extensions().ThirdPartyResources().Get(fullName, metav1.GetOptions{})
 	if err == nil {
 		return nil
 	}
@@ -65,15 +65,15 @@ func WaitThirdPartyResources(ext ExtensionsClientset, timeout time.Duration, int
 		case <-timeoutChan:
 			return err
 		case <-intervalChan:
-			_, err = ext.IPClaims().List(api.ListOptions{})
+			_, err = ext.IPClaims().List(metav1.ListOptions{})
 			if err != nil {
 				continue
 			}
-			_, err = ext.IPNodes().List(api.ListOptions{})
+			_, err = ext.IPNodes().List(metav1.ListOptions{})
 			if err != nil {
 				continue
 			}
-			_, err = ext.IPClaimPools().List(api.ListOptions{})
+			_, err = ext.IPClaimPools().List(metav1.ListOptions{})
 			if err != nil {
 				continue
 			}
