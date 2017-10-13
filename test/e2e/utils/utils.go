@@ -27,6 +27,7 @@ import (
 	apiremotecommand "k8s.io/apimachinery/pkg/util/remotecommand"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api"
+	_ "k8s.io/client-go/pkg/api/install"
 	"k8s.io/client-go/pkg/api/v1"
 	v1beta1 "k8s.io/client-go/pkg/apis/rbac/v1beta1"
 	"k8s.io/client-go/rest"
@@ -109,7 +110,7 @@ func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) (stri
 		Namespace(pod.Namespace).
 		SubResource("exec").
 		Param("container", container)
-	req.VersionedParams(&v1.PodExecOptions{
+	req.VersionedParams(&api.PodExecOptions{
 		Container: container,
 		Command:   cmd,
 		TTY:       false,
@@ -117,7 +118,6 @@ func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) (stri
 		Stdout:    true,
 		Stderr:    true,
 	}, api.ParameterCodec)
-	Logf("URL %v", req.URL())
 	err := execute("POST", req.URL(), config, nil, &stdout, &stderr, false)
 	Logf("Error %v: %v\n", cmd, stderr.String())
 	Logf("Output %v: %v\n", cmd, stdout.String())

@@ -70,9 +70,9 @@ integration: $(BUILD_DIR)/integration.test $(ENV_PREPARE_MARKER)
 .PHONY: e2e
 e2e: $(BUILD_DIR)/e2e.test $(ENV_PREPARE_MARKER) run-e2e
 
-run-e2e: 
+run-e2e: $(BUILD_DIR)/e2e.test
 	sudo $(BUILD_DIR)/e2e.test --master=http://localhost:8080 \
-	--testlink=br-$(shell docker network ls -f name=kubeadm-dind-net -q) -ginkgo.v -ginkgo.focus="123"
+	--testlink=br-$(shell docker network ls -f name=kubeadm-dind-net -q) -ginkgo.v
 
 
 .PHONY: test
