@@ -508,8 +508,8 @@ var _ = Describe("Third party objects", func() {
 		Expect(created.Spec.Ranges).To(Equal(eRanges))
 		Expect(created.Spec.Allocated).To(Equal(eAllocated))
 
-		ipclaimpool.Metadata.Annotations = map[string]string{"key": "value"}
-		updated, err := ext.IPClaimPools().Update(ipclaimpool)
+		created.Metadata.Annotations = map[string]string{"key": "value"}
+		updated, err := ext.IPClaimPools().Update(created)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(updated.Metadata.Annotations).Should(ConsistOf("value"))
 	})
