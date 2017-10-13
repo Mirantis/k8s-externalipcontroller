@@ -72,7 +72,7 @@ e2e: $(BUILD_DIR)/e2e.test $(ENV_PREPARE_MARKER) run-e2e
 
 run-e2e: 
 	sudo $(BUILD_DIR)/e2e.test --master=http://localhost:8080 \
-	--testlink=br-$(shell docker network ls -f name=kubeadm-dind-net -q) -ginkgo.v
+	--testlink=br-$(shell docker network ls -f name=kubeadm-dind-net -q) -ginkgo.v -ginkgo.focus="123"
 
 
 .PHONY: test

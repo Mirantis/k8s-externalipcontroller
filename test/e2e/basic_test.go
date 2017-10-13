@@ -202,7 +202,6 @@ var _ = Describe("Third party objects", func() {
 			_, err := clientset.Core().Nodes().Update(&node)
 			Expect(err).NotTo(HaveOccurred())
 		}
-		extensions.RemoveCRDs(kubeconfig)
 		err = extensions.EnsureCRDsExist(kubeconfig)
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -740,7 +739,7 @@ var _ = Describe("Third party objects", func() {
 		}, 15*time.Second, 1*time.Second).Should(BeEquivalentTo(0))
 	})
 
-	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [Native]", func() {
+	It("123: Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [Native]", func() {
 		processName := "ipmanager"
 		By("deploying claim scheduler pod")
 		scheduler := newPod(

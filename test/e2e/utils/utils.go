@@ -24,15 +24,14 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiremotecommand "k8s.io/apimachinery/pkg/util/remotecommand"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api"
 	"k8s.io/client-go/pkg/api/v1"
 	v1beta1 "k8s.io/client-go/pkg/apis/rbac/v1beta1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/kubernetes/pkg/client/unversioned/remotecommand"
-	remotecommandserver "k8s.io/kubernetes/pkg/kubelet/server/remotecommand"
-	"k8s.io/kubernetes/pkg/util/httpstream/spdy"
+	"k8s.io/client-go/tools/remotecommand"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -100,7 +99,6 @@ func dumpLogs(clientset *kubernetes.Clientset, pod v1.Pod) {
 
 func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) (string, string, error) {
 	Logf("Running %v in %v\n", cmd, pod.Name)
-
 	container := pod.Spec.Containers[0].Name
 	var stdout, stderr bytes.Buffer
 	config := LoadConfig()
@@ -111,7 +109,7 @@ func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) (stri
 		Namespace(pod.Namespace).
 		SubResource("exec").
 		Param("container", container)
-	req.VersionedParams(&api.PodExecOptions{
+	req.VersionedParams(&v1.PodExecOptions{
 		Container: container,
 		Command:   cmd,
 		TTY:       false,
@@ -119,6 +117,7 @@ func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) (stri
 		Stdout:    true,
 		Stderr:    true,
 	}, api.ParameterCodec)
+	Logf("URL %v", req.URL())
 	err := execute("POST", req.URL(), config, nil, &stdout, &stderr, false)
 	Logf("Error %v: %v\n", cmd, stderr.String())
 	Logf("Output %v: %v\n", cmd, stdout.String())
@@ -126,21 +125,21 @@ func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) (stri
 }
 
 func execute(method string, url *url.URL, config *rest.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool) error {
-	tlsConfig, err := rest.TLSConfigFor(config)
-	if err != nil {
-		return err
-	}
-	upgrader := spdy.NewRoundTripper(tlsConfig)
-	exec, err := remotecommand.NewStreamExecutor(upgrader, nil, method, url)
+	exec, err := remotecommand.NewExecutor(config, method, url)
 	if err != nil {
 		return err
 	}
 	return exec.Stream(remotecommand.StreamOptions{
-		SupportedProtocols: remotecommandserver.SupportedStreamingProtocols,
-		Stdin:              stdin,
-		Stdout:             stdout,
-		Stderr:             stderr,
-		Tty:                tty,
+		SupportedProtocols: []string{
+			apiremotecommand.StreamProtocolV4Name,
+			apiremotecommand.StreamProtocolV3Name,
+			apiremotecommand.StreamProtocolV2Name,
+			apiremotecommand.StreamProtocolV1Name,
+		},
+		Stdin:  stdin,
+		Stdout: stdout,
+		Stderr: stderr,
+		Tty:    tty,
 	})
 }
 

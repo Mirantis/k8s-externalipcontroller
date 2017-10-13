@@ -53,7 +53,7 @@ func kind(name string) string {
 func EnsureCRDsExist(config *rest.Config) error {
 	client := apiextensionsclient.NewForConfigOrDie(config)
 	for _, res := range resources {
-		if err := createCRD(client, res); err != nil && !errors.IsAlreadyExists(err) {
+		if err := createCRD(client, res); err != nil {
 			return err
 		}
 	}
@@ -63,8 +63,9 @@ func EnsureCRDsExist(config *rest.Config) error {
 func RemoveCRDs(config *rest.Config) error {
 	client := apiextensionsclient.NewForConfigOrDie(config)
 	for _, res := range resources {
+		plural := lowercase(res) + "s"
 		if err := client.Apiextensions().CustomResourceDefinitions().Delete(
-			fqName(res), &metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+			fqName(plural), &metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -93,7 +94,7 @@ func createCRD(client apiextensionsclient.Interface, name string) error {
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return fmt.Errorf("error creating custom resource definition: %v", err)
 	}
-	return err
+	return nil
 }
 
 func WaitCRDsEstablished(config *rest.Config, timeout time.Duration) error {
