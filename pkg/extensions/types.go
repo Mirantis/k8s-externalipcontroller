@@ -48,8 +48,9 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&IpClaimPool{},
 		&IpClaimPoolList{},
 
-		&api.ListOptions{},
-		&api.DeleteOptions{},
+		&metav1.GetOptions{},
+		&metav1.ListOptions{},
+		&metav1.DeleteOptions{},
 	)
 	return nil
 }

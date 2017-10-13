@@ -193,6 +193,8 @@ func (s *ipClaimScheduler) processExternalIPs(svc *v1.Service) {
 	if annotated := checkAnnotation(svc); annotated {
 		s.autoAllocateExternalIP(svc, pools, false)
 	} else if svc.Spec.Type == v1.ServiceTypeLoadBalancer {
+		glog.Infof("Allocate external ip for service %s/%s based on LoadBalancer type request",
+			svc.Namespace, svc.Name)
 		s.autoAllocateExternalIP(svc, pools, true)
 	}
 }

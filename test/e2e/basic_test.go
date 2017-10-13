@@ -38,6 +38,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
+	"k8s.io/client-go/rest"
 )
 
 var _ = Describe("Basic", func() {
@@ -110,19 +111,21 @@ var _ = Describe("Basic", func() {
 var _ = Describe("Register third party resources", func() {
 	var clientset *kubernetes.Clientset
 	var ext extensions.ExtensionsClientset
+	var kubeconfig *rest.Config
 
 	BeforeEach(func() {
+		kubeconfig = testutils.LoadConfig()
 		var err error
 		clientset, err = testutils.KubeClient()
 		Expect(err).NotTo(HaveOccurred())
 		testutils.AddServiceAccountToAdmins(clientset)
 		ext, err = extensions.WrapClientsetWithExtensions(clientset, testutils.LoadConfig())
 		Expect(err).NotTo(HaveOccurred())
-		extensions.RemoveCRDs(clientset)
+		extensions.RemoveCRDs(kubeconfig)
 	})
 
 	AfterEach(func() {
-		extensions.RemoveCRDs(clientset)
+		extensions.RemoveCRDs(kubeconfig)
 	})
 
 	It("should be reliable", func() {
@@ -145,10 +148,10 @@ var _ = Describe("Register third party resources", func() {
 			return nil
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 		By("verifying that all required tprs are created")
-		err := extensions.EnsureCRDsExist(clientset)
+		err := extensions.EnsureCRDsExist(kubeconfig)
 		Expect(err).NotTo(HaveOccurred())
 		By("waiting until all tprs will be registered")
-		err = extensions.WaitCRDsEstablished(clientset, 10*time.Second)
+		err = extensions.WaitCRDsEstablished(kubeconfig, 10*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("verifying that urls are registered and user requests can be served")
@@ -162,6 +165,7 @@ var _ = Describe("Register third party resources", func() {
 })
 
 var _ = Describe("Third party objects", func() {
+	var kubeconfig *rest.Config
 	var clientset *kubernetes.Clientset
 	var ext extensions.ExtensionsClientset
 	var daemonSets []*v1beta1.DaemonSet
@@ -173,6 +177,7 @@ var _ = Describe("Third party objects", func() {
 	var network *net.IPNet
 
 	BeforeEach(func() {
+		kubeconfig = testutils.LoadConfig()
 		var err error
 		addrToClear = []string{}
 		clientset, err = testutils.KubeClient()
@@ -197,8 +202,8 @@ var _ = Describe("Third party objects", func() {
 			_, err := clientset.Core().Nodes().Update(&node)
 			Expect(err).NotTo(HaveOccurred())
 		}
-		extensions.RemoveCRDs(clientset)
-		err = extensions.EnsureCRDsExist(clientset)
+		extensions.RemoveCRDs(kubeconfig)
+		err = extensions.EnsureCRDsExist(kubeconfig)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -481,7 +486,7 @@ var _ = Describe("Third party objects", func() {
 
 	It("Create IP claim pool resource via its client and try to retrieve it from k8s api back", func() {
 		var err error
-		err = extensions.EnsureCRDsExist(clientset)
+		err = extensions.EnsureCRDsExist(kubeconfig)
 		Expect(err).NotTo(HaveOccurred())
 
 		eRanges := [][]string{[]string{"10.20.0.10/24", "10.20.0.20/24"}}
@@ -512,7 +517,7 @@ var _ = Describe("Third party objects", func() {
 
 	It("IpClaim watcher should work with resource version as expected", func() {
 		By("ensuring that third party resources are created")
-		err := extensions.EnsureCRDsExist(clientset)
+		err := extensions.EnsureCRDsExist(kubeconfig)
 		By("creating ipclaim object")
 		Expect(err).NotTo(HaveOccurred())
 		ipclaim := &extensions.IpClaim{

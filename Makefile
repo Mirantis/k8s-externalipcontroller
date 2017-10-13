@@ -53,7 +53,7 @@ containerized-build:
 
 
 .PHONY: build-image
-build-image: $(BUILD_IMAGE_MARKER)
+build-image docker: $(BUILD_IMAGE_MARKER)
 
 
 .PHONY: unit

@@ -61,11 +61,11 @@ func InitScheduler() error {
 		glog.Errorf("Crashed during scheduler initialization: %v", err)
 		os.Exit(2)
 	}
-	err = extensions.EnsureCRDsExist(s.Clientset)
+	err = extensions.EnsureCRDsExist(config)
 	if err != nil {
 		glog.Fatalf("Crashed while initializing third party resources: %v", err)
 	}
-	err = extensions.WaitCRDsEstablished(s.Clientset, 10*time.Second)
+	err = extensions.WaitCRDsEstablished(config, 10*time.Second)
 	if err != nil {
 		glog.Fatalf("URLs for tprs are not registered: %v", err)
 	}

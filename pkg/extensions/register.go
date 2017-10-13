@@ -25,7 +25,7 @@ import (
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 var (
@@ -33,7 +33,7 @@ var (
 )
 
 func fqName(name string) string {
-	return fmt.Sprintf("%ss.%s", name, GroupName)
+	return fmt.Sprintf("%s.%s", name, GroupName)
 }
 
 func lowercase(name string) string {
@@ -50,8 +50,8 @@ func kind(name string) string {
 	return string(kindBytes)
 }
 
-func EnsureCRDsExist(ki kubernetes.Interface) error {
-	client := apiextensionsclient.New(ki.Core().RESTClient())
+func EnsureCRDsExist(config *rest.Config) error {
+	client := apiextensionsclient.NewForConfigOrDie(config)
 	for _, res := range resources {
 		if err := createCRD(client, res); err != nil && !errors.IsAlreadyExists(err) {
 			return err
@@ -60,8 +60,8 @@ func EnsureCRDsExist(ki kubernetes.Interface) error {
 	return nil
 }
 
-func RemoveCRDs(ki kubernetes.Interface) error {
-	client := apiextensionsclient.New(ki.Core().RESTClient())
+func RemoveCRDs(config *rest.Config) error {
+	client := apiextensionsclient.NewForConfigOrDie(config)
 	for _, res := range resources {
 		if err := client.Apiextensions().CustomResourceDefinitions().Delete(
 			fqName(res), &metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
@@ -73,27 +73,31 @@ func RemoveCRDs(ki kubernetes.Interface) error {
 
 func createCRD(client apiextensionsclient.Interface, name string) error {
 	singular := lowercase(name)
+	plural := singular + "s"
 	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: fqName(name),
+			Name: fqName(plural),
 		},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
 			Group:   GroupName,
 			Version: Version,
 			Scope:   apiextensionsv1beta1.ClusterScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
-				Plural:   singular + "s",
+				Plural:   plural,
 				Singular: singular,
 				Kind:     kind(name),
 			},
 		},
 	}
 	_, err := client.Apiextensions().CustomResourceDefinitions().Create(crd)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("error creating custom resource definition: %v", err)
+	}
 	return err
 }
 
-func WaitCRDsEstablished(ki kubernetes.Interface, timeout time.Duration) error {
-	client := apiextensionsclient.New(ki.Core().RESTClient())
+func WaitCRDsEstablished(config *rest.Config, timeout time.Duration) error {
+	client := apiextensionsclient.NewForConfigOrDie(config)
 	interval := time.Tick(200 * time.Millisecond)
 	timer := time.After(timeout)
 	for {
@@ -103,7 +107,8 @@ func WaitCRDsEstablished(ki kubernetes.Interface, timeout time.Duration) error {
 		case <-interval:
 			established := 0
 			for _, res := range resources {
-				crd, err := client.Apiextensions().CustomResourceDefinitions().Get(fqName(res), metav1.GetOptions{})
+				plural := lowercase(res) + "s"
+				crd, err := client.Apiextensions().CustomResourceDefinitions().Get(fqName(plural), metav1.GetOptions{})
 				if err != nil {
 					break
 				}
@@ -111,8 +116,6 @@ func WaitCRDsEstablished(ki kubernetes.Interface, timeout time.Duration) error {
 					if condition.Type == apiextensionsv1beta1.Established &&
 						condition.Status == apiextensionsv1beta1.ConditionTrue {
 						established++
-					} else {
-						break
 					}
 				}
 			}
