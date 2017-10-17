@@ -940,11 +940,12 @@ var _ = Describe("Third party objects", func() {
 		}
 		Expect(totalCount).To(BeNumerically("==", len(externalIPs)))
 
-		By("adding nodeSelector which will exclude node " + nodes.Items[0].Name)
+		nonMaster := GetFirstNonMaster(nodes)
+		By("controller will be running on node " + nonMaster.Name)
 		ds, err = clientset.Extensions().DaemonSets(ns.Name).Get("externalipcontroller", metav1.GetOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		ds.Spec.Template.Spec.NodeSelector = map[string]string{
-			"name": nodes.Items[0].Name,
+			"name": nonMaster.Name,
 		}
 		ds, err = clientset.Extensions().DaemonSets(ns.Name).Update(ds)
 		Expect(err).NotTo(HaveOccurred())
@@ -961,7 +962,7 @@ var _ = Describe("Third party objects", func() {
 			newPods := getPodsByLabels(clientset, ns, ipcontrollerLabels)
 			testutils.Logf("Pods %v\n", newPods)
 			if len(newPods) != 1 {
-				return fmt.Errorf("Unexpected length of pods %v", len(dsPods))
+				return fmt.Errorf("Unexpected length of pods %v", len(newPods))
 			}
 
 			newPodName := newPods[0].Name
@@ -1263,4 +1264,14 @@ func checkIpClaimsEventualCount(ext extensions.ExtensionsClientset, count int) {
 		}
 		return nil
 	}, 30*time.Second, 2*time.Second).Should(BeNil())
+}
+
+func GetFirstNonMaster(nodes *v1.NodeList) *v1.Node {
+	for i := range nodes.Items {
+		n := &nodes.Items[i]
+		if n.Name != testutils.MASTERNAME {
+			return n
+		}
+	}
+	return nil
 }

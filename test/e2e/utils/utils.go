@@ -39,12 +39,16 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 )
 
-var MASTER string
-var TESTLINK string
+var (
+	MASTER     string
+	TESTLINK   string
+	MASTERNAME string
+)
 
 func init() {
 	flag.StringVar(&MASTER, "master", "http://apiserver:8888", "apiserver address to use with restclient")
 	flag.StringVar(&TESTLINK, "testlink", "eth0", "link to use on the side of tests")
+	flag.StringVar(&MASTERNAME, "mastername", "kube-master", "node that wont be used for scheduling")
 }
 
 func GetTestLink() string {
