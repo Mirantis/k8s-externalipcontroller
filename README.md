@@ -48,7 +48,7 @@ testing envrionment you can use:
 kubectl apply -f examples/auth.yaml
 ```
 
-In case you are using kuebadm dind environment - deploy claim controller and scheduller like this: 
+In case you are using kubeadm dind environment - deploy claim controller and scheduller like this: 
 ```
 kubectl apply -f examples/claims/
 ```
