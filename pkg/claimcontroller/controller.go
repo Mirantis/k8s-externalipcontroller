@@ -15,21 +15,21 @@
 package claimcontroller
 
 import (
-	"time"
 	"strings"
+	"time"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 
 	"github.com/golang/glog"
-	"k8s.io/client-go/1.5/kubernetes"
-	"k8s.io/client-go/1.5/pkg/api"
-	"k8s.io/client-go/1.5/pkg/api/errors"
-	"k8s.io/client-go/1.5/pkg/runtime"
-	"k8s.io/client-go/1.5/pkg/watch"
-	"k8s.io/client-go/1.5/rest"
-	"k8s.io/client-go/1.5/tools/cache"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 )
 
 func NewClaimController(iface, uid string, config *rest.Config, resyncInterval time.Duration, hbInterval time.Duration) (*claimController, error) {
@@ -42,10 +42,10 @@ func NewClaimController(iface, uid string, config *rest.Config, resyncInterval t
 		return nil, err
 	}
 	claimSource := &cache.ListWatch{
-		ListFunc: func(options api.ListOptions) (runtime.Object, error) {
+		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
 			return ext.IPClaims().List(options)
 		},
-		WatchFunc: func(options api.ListOptions) (watch.Interface, error) {
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 			glog.V(3).Infof("Calling claim watcher with options %v", options)
 			return ext.IPClaims().Watch(options)
 		},
@@ -161,7 +161,7 @@ func (c *claimController) heartbeatIpNode(stop chan struct{}, ticker <-chan time
 			ipnode, err := c.ExtensionsClientset.IPNodes().Get(c.Uid)
 			if errors.IsNotFound(err) {
 				ipnode := &extensions.IpNode{
-					Metadata: api.ObjectMeta{Name: c.Uid},
+					Metadata: metav1.ObjectMeta{Name: c.Uid},
 				}
 				_, err := c.ExtensionsClientset.IPNodes().Create(ipnode)
 				if err != nil {

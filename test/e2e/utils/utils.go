@@ -23,27 +23,32 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/client-go/1.5/kubernetes"
-	"k8s.io/client-go/1.5/pkg/api"
-	"k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/pkg/apis/rbac/v1alpha1"
-	"k8s.io/client-go/1.5/rest"
-	"k8s.io/client-go/1.5/tools/clientcmd"
-	"k8s.io/kubernetes/pkg/client/unversioned/remotecommand"
-	remotecommandserver "k8s.io/kubernetes/pkg/kubelet/server/remotecommand"
-	"k8s.io/kubernetes/pkg/util/httpstream/spdy"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apiremotecommand "k8s.io/apimachinery/pkg/util/remotecommand"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/pkg/api"
+	_ "k8s.io/client-go/pkg/api/install"
+	"k8s.io/client-go/pkg/api/v1"
+	v1beta1 "k8s.io/client-go/pkg/apis/rbac/v1beta1"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"k8s.io/client-go/1.5/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/errors"
 )
 
-var MASTER string
-var TESTLINK string
+var (
+	MASTER     string
+	TESTLINK   string
+	MASTERNAME string
+)
 
 func init() {
 	flag.StringVar(&MASTER, "master", "http://apiserver:8888", "apiserver address to use with restclient")
 	flag.StringVar(&TESTLINK, "testlink", "eth0", "link to use on the side of tests")
+	flag.StringVar(&MASTERNAME, "mastername", "kube-master", "node that wont be used for scheduling")
 }
 
 func GetTestLink() string {
@@ -70,7 +75,7 @@ func KubeClient() (*kubernetes.Clientset, error) {
 
 func WaitForReady(clientset *kubernetes.Clientset, pod *v1.Pod) {
 	Eventually(func() error {
-		podUpdated, err := clientset.Core().Pods(pod.Namespace).Get(pod.Name)
+		podUpdated, err := clientset.Core().Pods(pod.Namespace).Get(pod.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -99,11 +104,10 @@ func dumpLogs(clientset *kubernetes.Clientset, pod v1.Pod) {
 
 func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) (string, string, error) {
 	Logf("Running %v in %v\n", cmd, pod.Name)
-
 	container := pod.Spec.Containers[0].Name
 	var stdout, stderr bytes.Buffer
 	config := LoadConfig()
-	rest := clientset.CoreClient.GetRESTClient()
+	rest := clientset.Core().RESTClient()
 	req := rest.Post().
 		Resource("pods").
 		Name(pod.Name).
@@ -125,36 +129,36 @@ func ExecInPod(clientset *kubernetes.Clientset, pod v1.Pod, cmd ...string) (stri
 }
 
 func execute(method string, url *url.URL, config *rest.Config, stdin io.Reader, stdout, stderr io.Writer, tty bool) error {
-	tlsConfig, err := rest.TLSConfigFor(config)
-	if err != nil {
-		return err
-	}
-	upgrader := spdy.NewRoundTripper(tlsConfig)
-	exec, err := remotecommand.NewStreamExecutor(upgrader, nil, method, url)
+	exec, err := remotecommand.NewExecutor(config, method, url)
 	if err != nil {
 		return err
 	}
 	return exec.Stream(remotecommand.StreamOptions{
-		SupportedProtocols: remotecommandserver.SupportedStreamingProtocols,
-		Stdin:              stdin,
-		Stdout:             stdout,
-		Stderr:             stderr,
-		Tty:                tty,
+		SupportedProtocols: []string{
+			apiremotecommand.StreamProtocolV4Name,
+			apiremotecommand.StreamProtocolV3Name,
+			apiremotecommand.StreamProtocolV2Name,
+			apiremotecommand.StreamProtocolV1Name,
+		},
+		Stdin:  stdin,
+		Stdout: stdout,
+		Stderr: stderr,
+		Tty:    tty,
 	})
 }
 
 // AddServiceAccountToAdmins will add system:serviceaccounts to cluster-admin ClusterRole
 func AddServiceAccountToAdmins(c kubernetes.Interface) {
 	By("Adding service account group to cluster-admin role")
-	roleBinding := &v1alpha1.ClusterRoleBinding{
-		ObjectMeta: v1.ObjectMeta{
+	roleBinding := &v1beta1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: "system:serviceaccount-admin",
 		},
-		Subjects: []v1alpha1.Subject{{
+		Subjects: []v1beta1.Subject{{
 			Kind: "Group",
 			Name: "system:serviceaccounts",
 		}},
-		RoleRef: v1alpha1.RoleRef{
+		RoleRef: v1beta1.RoleRef{
 			Kind:     "ClusterRole",
 			Name:     "cluster-admin",
 			APIGroup: "rbac.authorization.k8s.io",

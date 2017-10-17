@@ -22,9 +22,10 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/workqueue"
 	"github.com/stretchr/testify/mock"
 
-	"k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/tools/cache"
-	fcache "k8s.io/client-go/1.5/tools/cache/testing"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/tools/cache"
+	fcache "k8s.io/client-go/tools/cache/testing"
 )
 
 type fakeIpHandler struct {
@@ -76,7 +77,7 @@ func TestControllerServicesAdded(t *testing.T) {
 			}
 		}
 		source.Add(&v1.Service{
-			ObjectMeta: v1.ObjectMeta{Name: "service-" + string(i)},
+			ObjectMeta: metav1.ObjectMeta{Name: "service-" + string(i)},
 			Spec:       v1.ServiceSpec{ExternalIPs: ips},
 		})
 	}

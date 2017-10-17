@@ -11,7 +11,7 @@ spec:
       hostNetwork: true
       containers:
       - name: externalipcontroller
-        image: yashulyak/k8s-externalipcontroller
+        image: mirantis/k8s-externalipcontroller
         imagePullPolicy: IfNotPresent
         securityContext:
           privileged: true

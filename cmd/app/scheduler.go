@@ -23,8 +23,8 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/1.5/rest"
-	"k8s.io/client-go/1.5/tools/clientcmd"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubernetes/pkg/api"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/client/leaderelection"
@@ -61,11 +61,11 @@ func InitScheduler() error {
 		glog.Errorf("Crashed during scheduler initialization: %v", err)
 		os.Exit(2)
 	}
-	err = extensions.EnsureThirdPartyResourcesExist(s.Clientset)
+	err = extensions.EnsureCRDsExist(config)
 	if err != nil {
 		glog.Fatalf("Crashed while initializing third party resources: %v", err)
 	}
-	err = extensions.WaitThirdPartyResources(s.ExtensionsClientset, 10*time.Second, 1*time.Second)
+	err = extensions.WaitCRDsEstablished(config, 10*time.Second)
 	if err != nil {
 		glog.Fatalf("URLs for tprs are not registered: %v", err)
 	}

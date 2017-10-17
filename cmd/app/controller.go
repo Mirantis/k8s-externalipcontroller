@@ -22,8 +22,8 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/extensions"
 
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/1.5/rest"
-	"k8s.io/client-go/1.5/tools/clientcmd"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 func init() {
@@ -60,11 +60,11 @@ func InitController() error {
 	if err != nil {
 		return err
 	}
-	err = extensions.EnsureThirdPartyResourcesExist(c.Clientset)
+	err = extensions.EnsureCRDsExist(config)
 	if err != nil {
 		return err
 	}
-	err = extensions.WaitThirdPartyResources(c.ExtensionsClientset, 10*time.Second, 1*time.Second)
+	err = extensions.WaitCRDsEstablished(config, 10*time.Second)
 	if err != nil {
 		return err
 	}

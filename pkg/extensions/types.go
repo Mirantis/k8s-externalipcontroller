@@ -19,11 +19,11 @@ import (
 	"errors"
 	"net"
 
-	"k8s.io/client-go/1.5/pkg/api"
-	"k8s.io/client-go/1.5/pkg/api/meta"
-	"k8s.io/client-go/1.5/pkg/api/unversioned"
-	"k8s.io/client-go/1.5/pkg/apimachinery/announced"
-	"k8s.io/client-go/1.5/pkg/runtime"
+	"k8s.io/apimachinery/pkg/apimachinery/announced"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/pkg/api"
 
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/netutils"
 )
@@ -34,7 +34,7 @@ const (
 )
 
 var (
-	SchemeGroupVersion = unversioned.GroupVersion{Group: GroupName, Version: Version}
+	SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: Version}
 	SchemeBuilder      = runtime.NewSchemeBuilder(addKnownTypes)
 )
 
@@ -48,8 +48,9 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&IpClaimPool{},
 		&IpClaimPoolList{},
 
-		&api.ListOptions{},
-		&api.DeleteOptions{},
+		&metav1.GetOptions{},
+		&metav1.ListOptions{},
+		&metav1.DeleteOptions{},
 	)
 	return nil
 }
@@ -64,60 +65,60 @@ func init() {
 		announced.VersionToSchemeFunc{
 			SchemeGroupVersion.Version: SchemeBuilder.AddToScheme,
 		},
-	).Announce().RegisterAndEnable(); err != nil {
+	).Announce(api.GroupFactoryRegistry).RegisterAndEnable(api.Registry, api.Scheme); err != nil {
 		panic(err)
 	}
 }
 
 type IpNode struct {
-	unversioned.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
 
 	// Standard object metadata
-	Metadata api.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	Metadata metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	// used as a heartbeat
 	Revision int64 `json:",string"`
 }
 
-func (e *IpNode) GetObjectKind() unversioned.ObjectKind {
+func (e *IpNode) GetObjectKind() schema.ObjectKind {
 	return &e.TypeMeta
 }
 
-func (e *IpNode) GetObjectMeta() meta.Object {
+func (e *IpNode) GetObjectMeta() metav1.Object {
 	return &e.Metadata
 }
 
 type IpNodeList struct {
-	unversioned.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
 
 	// Standard list metadata.
-	unversioned.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	Items []IpNode `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 
 type IpClaim struct {
-	unversioned.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
 
 	// Standard object metadata
-	Metadata api.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	Metadata metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	Spec IpClaimSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 }
 
-func (e *IpClaim) GetObjectKind() unversioned.ObjectKind {
+func (e *IpClaim) GetObjectKind() schema.ObjectKind {
 	return &e.TypeMeta
 }
 
-func (e *IpClaim) GetObjectMeta() meta.Object {
+func (e *IpClaim) GetObjectMeta() metav1.Object {
 	return &e.Metadata
 }
 
 type IpClaimList struct {
-	unversioned.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
 
 	// Standard list metadata.
-	unversioned.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	Items []IpClaim `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
@@ -130,10 +131,10 @@ type IpClaimSpec struct {
 }
 
 type IpClaimPool struct {
-	unversioned.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
 
 	// Standard object metadata
-	Metadata api.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	Metadata metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	Spec IpClaimPoolSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
 }
@@ -145,10 +146,10 @@ type IpClaimPoolSpec struct {
 }
 
 type IpClaimPoolList struct {
-	unversioned.TypeMeta `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
 
 	// Standard list metadata.
-	unversioned.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
+	metav1.ListMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 
 	Items []IpClaimPool `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
@@ -200,11 +201,11 @@ func (p *IpClaimPool) AvailableIP() (availableIP string, err error) {
 	return "", errors.New("There is no free IP left in the pool")
 }
 
-func (p *IpClaimPool) GetObjectKind() unversioned.ObjectKind {
+func (p *IpClaimPool) GetObjectKind() schema.ObjectKind {
 	return &p.TypeMeta
 }
 
-func (p *IpClaimPool) GetObjectMeta() meta.Object {
+func (p *IpClaimPool) GetObjectMeta() metav1.Object {
 	return &p.Metadata
 }
 

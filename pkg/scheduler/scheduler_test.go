@@ -25,12 +25,13 @@ import (
 	"github.com/Mirantis/k8s-externalipcontroller/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"k8s.io/client-go/1.5/kubernetes/fake"
-	"k8s.io/client-go/1.5/pkg/api"
-	"k8s.io/client-go/1.5/pkg/api/v1"
-	fcache "k8s.io/client-go/1.5/tools/cache/testing"
-	"k8s.io/client-go/1.5/pkg/types"
-	"k8s.io/client-go/1.5/tools/cache"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/pkg/api"
+	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/tools/cache"
+	fcache "k8s.io/client-go/tools/cache/testing"
 )
 
 func TestServiceWatcher(t *testing.T) {
@@ -53,7 +54,7 @@ func TestServiceWatcher(t *testing.T) {
 	defer s.changeQueue.Close()
 
 	svc := &v1.Service{
-		ObjectMeta: v1.ObjectMeta{Name: "test0"},
+		ObjectMeta: metav1.ObjectMeta{Name: "test0"},
 		Spec:       v1.ServiceSpec{ExternalIPs: []string{"10.10.0.2"}}}
 	lw.Add(svc)
 	// let controller process all services
@@ -80,7 +81,7 @@ func TestAutoAllocationForServices(t *testing.T) {
 	lw := fcache.NewFakeControllerSource()
 	stop := make(chan struct{})
 	svc := v1.Service{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:        "need-alloc-svc",
 			Annotations: map[string]string{"external-ip": "auto"},
 			Namespace:   api.NamespaceDefault,
@@ -99,7 +100,7 @@ func TestAutoAllocationForServices(t *testing.T) {
 	poolCIDR := "192.168.16.248/29"
 	poolRanges := [][]string{[]string{"192.168.16.250", "192.168.16.252"}}
 	pool := &extensions.IpClaimPool{
-		Metadata: api.ObjectMeta{Name: "test-pool"},
+		Metadata: metav1.ObjectMeta{Name: "test-pool"},
 		Spec: extensions.IpClaimPoolSpec{
 			CIDR:   poolCIDR,
 			Ranges: poolRanges,
@@ -141,7 +142,7 @@ func TestAutoAllocationForServices(t *testing.T) {
 		map[string]string{"192.168.16.250": "192-168-16-250-29"},
 		"Allocated was not updated correctly for the pool")
 
-	updatedSvc, _ := fakeClientset.Core().Services(svc.ObjectMeta.Namespace).Get(svc.ObjectMeta.Name)
+	updatedSvc, _ := fakeClientset.Core().Services(svc.ObjectMeta.Namespace).Get(svc.ObjectMeta.Name, metav1.GetOptions{})
 	assert.Equal(t, []string{"192.168.16.250"}, updatedSvc.Spec.ExternalIPs)
 
 	poolList.Items[0].Spec.Allocated = map[string]string{"192.168.16.250": "192-168-16-250-29"}
@@ -186,7 +187,7 @@ func TestClaimNotCreatedIfExternalIPIsAutoAllocated(t *testing.T) {
 	poolCIDR := "192.168.16.248/29"
 	poolRanges := [][]string{[]string{"192.168.16.250", "192.168.16.252"}}
 	pool := &extensions.IpClaimPool{
-		Metadata: api.ObjectMeta{Name: "test-pool"},
+		Metadata: metav1.ObjectMeta{Name: "test-pool"},
 		Spec: extensions.IpClaimPoolSpec{
 			CIDR:      poolCIDR,
 			Ranges:    poolRanges,
@@ -212,7 +213,7 @@ func TestClaimNotCreatedIfExternalIPIsAutoAllocated(t *testing.T) {
 	defer s.changeQueue.Close()
 
 	svc := v1.Service{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:        "need-alloc-svc",
 			Annotations: map[string]string{"external-ip": "auto"},
 			Namespace:   api.NamespaceDefault,
@@ -240,7 +241,7 @@ func TestAutoAllocatedOnServiceUpdate(t *testing.T) {
 	poolCIDR := "192.168.16.248/29"
 	poolRanges := [][]string{[]string{"192.168.16.250", "192.168.16.252"}}
 	pool := &extensions.IpClaimPool{
-		Metadata: api.ObjectMeta{Name: "test-pool"},
+		Metadata: metav1.ObjectMeta{Name: "test-pool"},
 		Spec: extensions.IpClaimPoolSpec{
 			CIDR:   poolCIDR,
 			Ranges: poolRanges,
@@ -254,7 +255,7 @@ func TestAutoAllocatedOnServiceUpdate(t *testing.T) {
 	ext.Ipclaims.On("Create", mock.Anything).Return(nil)
 
 	svc := v1.Service{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "need-alloc-svc",
 			Namespace: api.NamespaceDefault,
 		},
@@ -298,7 +299,7 @@ func TestAutoAllocatedOnServiceUpdate(t *testing.T) {
 	assert.Equal(t, "192.168.16.250/29", ipclaim.Spec.Cidr, "Unexpected cidr assigned to node")
 	assert.Equal(t, "192-168-16-250-29", ipclaim.Metadata.Name, "Unexpected name")
 
-	updatedSvc, _ := fakeClientset.Core().Services(svc.ObjectMeta.Namespace).Get(svc.ObjectMeta.Name)
+	updatedSvc, _ := fakeClientset.Core().Services(svc.ObjectMeta.Namespace).Get(svc.ObjectMeta.Name, metav1.GetOptions{})
 	assert.Contains(t, updatedSvc.Spec.ExternalIPs, "192.168.16.250")
 }
 
@@ -308,7 +309,7 @@ func TestClaimWatcher(t *testing.T) {
 	fss := cache.NewStore(cache.MetaNamespaceKeyFunc)
 
 	svc := v1.Service{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      "some-svc",
 			Namespace: api.NamespaceDefault,
 		},
@@ -340,9 +341,9 @@ func TestClaimWatcher(t *testing.T) {
 	defer s.changeQueue.Close()
 
 	ctrl := false
-	ownerRef := api.OwnerReference{APIVersion: "v1", Kind: "Service", Name: "some-svc", UID: types.UID("default/some-svc"), Controller: &ctrl}
+	ownerRef := metav1.OwnerReference{APIVersion: "v1", Kind: "Service", Name: "some-svc", UID: types.UID("default/some-svc"), Controller: &ctrl}
 	claim := &extensions.IpClaim{
-		Metadata: api.ObjectMeta{Name: "10.10.0.2-24", OwnerReferences: []api.OwnerReference{ownerRef}},
+		Metadata: metav1.ObjectMeta{Name: "10.10.0.2-24", OwnerReferences: []metav1.OwnerReference{ownerRef}},
 		Spec:     extensions.IpClaimSpec{Cidr: "10.10.0.2/24"},
 	}
 	lw.Add(claim)
@@ -350,7 +351,7 @@ func TestClaimWatcher(t *testing.T) {
 	ipnodesList := &extensions.IpNodeList{
 		Items: []extensions.IpNode{
 			{
-				Metadata: api.ObjectMeta{Name: "first"},
+				Metadata: metav1.ObjectMeta{Name: "first"},
 			},
 		},
 	}
@@ -385,7 +386,7 @@ func TestMonitorIpNodes(t *testing.T) {
 	ipnodesList := &extensions.IpNodeList{
 		Items: []extensions.IpNode{
 			{
-				Metadata: api.ObjectMeta{
+				Metadata: metav1.ObjectMeta{
 					Name: "first",
 				},
 				Revision: 555,
@@ -395,7 +396,7 @@ func TestMonitorIpNodes(t *testing.T) {
 	ipclaimsList := &extensions.IpClaimList{
 		Items: []extensions.IpClaim{
 			{
-				Metadata: api.ObjectMeta{
+				Metadata: metav1.ObjectMeta{
 					Name:   "10.10.0.1-24",
 					Labels: map[string]string{"ipnode": "first"},
 				},
@@ -405,7 +406,7 @@ func TestMonitorIpNodes(t *testing.T) {
 				},
 			},
 			{
-				Metadata: api.ObjectMeta{
+				Metadata: metav1.ObjectMeta{
 					Name:   "10.10.0.2-24",
 					Labels: map[string]string{"ipnode": "first"},
 				},
