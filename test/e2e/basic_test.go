@@ -646,7 +646,7 @@ var _ = Describe("Third party objects", func() {
 		}, 30*time.Second, 1*time.Second).Should(BeNil())
 	})
 
-	It("Daemon set version cleans orphaned IP claims when scheduler has missed services updates for some reason", func() {
+	It("Daemon set version cleans orphaned IP claims when scheduler has missed services updates for some reason [Flaky]", func() {
 		processName := "ipmanager"
 		By("deploying claim scheduler pod")
 		scheduler := newPod(
@@ -739,7 +739,7 @@ var _ = Describe("Third party objects", func() {
 		}, 15*time.Second, 1*time.Second).Should(BeEquivalentTo(0))
 	})
 
-	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [Native]", func() {
+	It("Daemon set version should run on multiple nodes, split ips evenly and tolerate failures [Native] [Flaky]", func() {
 		processName := "ipmanager"
 		By("deploying claim scheduler pod")
 		scheduler := newPod(
