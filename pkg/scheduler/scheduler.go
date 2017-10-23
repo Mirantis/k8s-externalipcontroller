@@ -388,6 +388,7 @@ func (s *ipClaimScheduler) claimChangeWorker() {
 				glog.Errorf("Unable to update IP claim '%v'. Details: %v", claim.Metadata.Name, err)
 			}
 		case cache.Deleted:
+			glog.V(5).Infof("claim %s will be deleted", claim.Metadata.Name)
 			err := client.Delete(claim.Metadata.Name, &metav1.DeleteOptions{})
 			if err != nil {
 				glog.Errorf("Unable to delete IP claim '%v'. Details: %v", claim.Metadata.Name, err)
@@ -445,6 +446,7 @@ func (s *ipClaimScheduler) getIPClaimPoolList() *extensions.IpClaimPoolList {
 }
 
 func (s *ipClaimScheduler) deleteIPClaimAndAllocation(ip string, pools *extensions.IpClaimPoolList) {
+	glog.V(5).Infof("adding delete request for a clai with ip %s", ip)
 	if p := poolByAllocatedIP(ip, pools); p != nil {
 		s.addClaimChangeRequest(makeIPClaim(ip, strings.Split(p.Spec.CIDR, "/")[1], nil), cache.Deleted)
 		delete(p.Spec.Allocated, ip)
@@ -493,8 +495,10 @@ func (s *ipClaimScheduler) ownersAlive(claim *extensions.IpClaim) []metav1.Owner
 }
 
 func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
+	glog.V(5).Infof("verifying owners for a claim %s/%s", claim.Metadata.Namespace, claim.Metadata.Name)
 	ownersAlive := s.ownersAlive(claim)
 	if len(ownersAlive) == 0 {
+		glog.V(5).Infof("owners of a claim %s/%s do not exist", claim.Metadata.Namespace, claim.Metadata.Name)
 		// all owner links are irrelevant
 		pools := s.getIPClaimPoolList()
 		s.deleteIPClaimAndAllocation(strings.Split(claim.Spec.Cidr, "/")[0], pools)
@@ -504,7 +508,7 @@ func (s *ipClaimScheduler) processIpClaim(claim *extensions.IpClaim) error {
 		claim.Metadata.OwnerReferences = ownersAlive
 		s.addClaimChangeRequest(claim, cache.Updated)
 	}
-
+	glog.V(5).Infof("owners of a claim %s are alive: %v", claim.Metadata.Name, ownersAlive)
 	if claim.Spec.NodeName != "" && s.isLive(claim.Spec.NodeName) {
 		return nil
 	}
@@ -627,7 +631,6 @@ func makeIPClaim(ip, mask string, svc *v1.Service) *extensions.IpClaim {
 	cidr := strings.Join([]string{ip, mask}, "/")
 
 	glog.V(2).Infof("Creating IP claim '%v'", key)
-
 	meta := metav1.ObjectMeta{Name: key}
 	if svc != nil {
 		svc_key, err := cache.MetaNamespaceKeyFunc(svc)
@@ -635,7 +638,7 @@ func makeIPClaim(ip, mask string, svc *v1.Service) *extensions.IpClaim {
 			return nil
 		}
 		ctrl := false
-		ownerRef := metav1.OwnerReference{APIVersion: "v1", Kind: "Service", Name: svc.Name, UID: types.UID(svc_key), Controller: &ctrl}
+		ownerRef := metav1.OwnerReference{APIVersion: "v1", Kind: "ServiceReference", Name: svc.Name, UID: types.UID(svc_key), Controller: &ctrl}
 		meta.OwnerReferences = []metav1.OwnerReference{ownerRef}
 	}
 
