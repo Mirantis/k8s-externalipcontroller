@@ -1,7 +1,7 @@
 apiVersion: v1
 description: Configure External IPs on k8s worker node(s) to provide IP connectivity.
 name: externalipcontroller
-version: 0.1.0
+version: 0.1.1
 keywords:
 - externalip
 - external-ip

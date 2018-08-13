@@ -1,26 +1,41 @@
 apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
-  name: {{ .Values.scheduler.name }}
+  name: {{ template "fullname" . }}-{{ .Values.scheduler.name }}
   labels:
-    chart: "{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}"
+    app: {{ template "fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    component: {{ .Values.scheduler.name }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.scheduler.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ template "fullname" . }}
+      component: {{ .Values.scheduler.name }}
   template:
     metadata:
       labels:
-        app: {{ .Values.scheduler.name }}
+        app: {{ template "fullname" . }}
+        chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        component: {{ .Values.scheduler.name }}
     spec:
       containers:
-      - name: {{ .Chart.Name }}
+      - name: {{ .Values.scheduler.name }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command:
-        - ipmanager
-        - scheduler
-        - --mask={{ .Values.scheduler.network_mask }}
-        - --logtostderr
-        - --v=5
-        - --leader-elect=true
-        - --monitor=4s
-        - --nodefilter=fair
+          - ipmanager
+          - scheduler
+          - --mask={{ .Values.scheduler.network_mask }}
+          - --logtostderr
+          - --v=5
+          - --leader-elect=true
+          - --monitor=4s
+          - --nodefilter=fair
+        resources:
+{{ toYaml .Values.scheduler.resources | indent 12 }}
+      {{- with .Values.scheduler.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      serviceAccountName: {{ template "fullname" . }}

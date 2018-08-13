@@ -1,16 +1,26 @@
 apiVersion: extensions/v1beta1
 kind: DaemonSet
 metadata:
-  name: {{ .Values.controller.name }}
+  labels:
+    app: {{ template "fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    component: {{ .Values.controller.name }}
+  name: {{ template "fullname" . }}-{{ .Values.controller.name }}
 spec:
+  selector:
+    matchLabels:
+      app: {{ template "fullname" . }}
+      component: {{ .Values.controller.name }}
   template:
     metadata:
       labels:
-        app: {{ .Chart.Name }}
+        app: {{ template "fullname" . }}
+        chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        component: {{ .Values.controller.name }}
     spec:
       hostNetwork: true
       containers:
-      - name: {{ .Chart.Name }}
+      - name: {{ .Values.controller.name }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         securityContext:
@@ -22,3 +32,10 @@ spec:
           - --logtostderr
           - --v=5
           - --hb=500ms
+        resources:
+{{ toYaml .Values.controller.resources | indent 12 }}
+      {{- with .Values.controller.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      serviceAccountName: {{ template "fullname" . }}
